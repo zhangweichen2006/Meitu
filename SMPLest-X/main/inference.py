@@ -101,14 +101,17 @@ def main():
         vis_img = original_img.copy()
         original_img_height, original_img_width = original_img.shape[:2]
 
-        # detection, xyxy
-        yolo_bbox = detector.predict(original_img,
+        # detection, concatenate xyxy with confidence to shape (N,5)
+        yolo_result = detector.predict(original_img,
                                 device='cuda',
                                 classes=0,
                                 conf=cfg.inference.detection.conf,
                                 save=cfg.inference.detection.save,
                                 verbose=cfg.inference.detection.verbose
-                                    )[0].boxes.xyxy.detach().cpu().numpy()
+                                    )[0]
+        xyxy = yolo_result.boxes.xyxy.detach().cpu().numpy()
+        conf = yolo_result.boxes.conf.detach().cpu().numpy().reshape(-1, 1)
+        yolo_bbox = np.concatenate([xyxy, conf], axis=1) if xyxy.size != 0 else xyxy
 
         # If no bbox found, write the original image and exit
         if yolo_bbox.size == 0:
@@ -127,6 +130,19 @@ def main():
         num_bbox = len(yolo_bbox)
 
         # loop all detected bboxes
+        # color palette for different persons (BGR)
+        color_palette = [
+            (0, 0, 255),      # red
+            (0, 255, 0),      # green
+            (255, 0, 0),      # blue
+            (0, 255, 255),    # yellow
+            (255, 0, 255),    # magenta
+            (255, 255, 0),    # cyan
+            (128, 0, 255),
+            (0, 128, 255),
+            (255, 128, 0),
+        ]
+
         for bbox_id in range(num_bbox):
             yolo_bbox_xywh = np.zeros((4))
             yolo_bbox_xywh[0] = yolo_bbox[bbox_id][0]
@@ -168,8 +184,9 @@ def main():
             # draw the bbox on img
             vis_img = cv2.rectangle(vis_img, (int(yolo_bbox[bbox_id][0]), int(yolo_bbox[bbox_id][1])),
                                     (int(yolo_bbox[bbox_id][2]), int(yolo_bbox[bbox_id][3])), (0, 255, 0), 1)
-            # draw mesh
-            vis_img = render_mesh(vis_img, mesh, smpl_x.face, {'focal': focal, 'princpt': princpt}, mesh_as_vertices=False)
+            # draw mesh with per-person color
+            color = color_palette[bbox_id % len(color_palette)]
+            vis_img = render_mesh(vis_img, mesh, smpl_x.face, {'focal': focal, 'princpt': princpt}, mesh_as_vertices=False, color=color)
 
         # save rendered image
         frame_name = os.path.basename(img_path)
@@ -189,14 +206,17 @@ def main():
         vis_img = original_img.copy()
         original_img_height, original_img_width = original_img.shape[:2]
 
-        # detection, xyxy
-        yolo_bbox = detector.predict(original_img,
+        # detection, concatenate xyxy with confidence to shape (N,5)
+        yolo_result = detector.predict(original_img,
                                 device='cuda',
                                 classes=0,
                                 conf=cfg.inference.detection.conf,
                                 save=cfg.inference.detection.save,
                                 verbose=cfg.inference.detection.verbose
-                                    )[0].boxes.xyxy.detach().cpu().numpy()
+                                    )[0]
+        xyxy = yolo_result.boxes.xyxy.detach().cpu().numpy()
+        conf = yolo_result.boxes.conf.detach().cpu().numpy().reshape(-1, 1)
+        yolo_bbox = np.concatenate([xyxy, conf], axis=1) if xyxy.size != 0 else xyxy
 
         # If no bbox found, write the original image to keep frame indexing consistent and skip processing
         if yolo_bbox.size == 0:
@@ -215,6 +235,19 @@ def main():
         num_bbox = len(yolo_bbox)
 
         # loop all detected bboxes
+        # color palette for different persons (BGR)
+        color_palette = [
+            (0, 0, 255),
+            (0, 255, 0),
+            (255, 0, 0),
+            (0, 255, 255),
+            (255, 0, 255),
+            (255, 255, 0),
+            (128, 0, 255),
+            (0, 128, 255),
+            (255, 128, 0),
+        ]
+
         for bbox_id in range(num_bbox):
             yolo_bbox_xywh = np.zeros((4))
             yolo_bbox_xywh[0] = yolo_bbox[bbox_id][0]
@@ -256,8 +289,9 @@ def main():
             # draw the bbox on img
             vis_img = cv2.rectangle(vis_img, (int(yolo_bbox[bbox_id][0]), int(yolo_bbox[bbox_id][1])),
                                     (int(yolo_bbox[bbox_id][2]), int(yolo_bbox[bbox_id][3])), (0, 255, 0), 1)
-            # draw mesh
-            vis_img = render_mesh(vis_img, mesh, smpl_x.face, {'focal': focal, 'princpt': princpt}, mesh_as_vertices=False)
+            # draw mesh with per-person color
+            color = color_palette[bbox_id % len(color_palette)]
+            vis_img = render_mesh(vis_img, mesh, smpl_x.face, {'focal': focal, 'princpt': princpt}, mesh_as_vertices=False, color=color)
 
         # save rendered image
         frame_name = os.path.basename(img_path)

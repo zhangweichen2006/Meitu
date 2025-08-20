@@ -111,7 +111,7 @@ def vis_3d_skeleton(kpt_3d, kpt_3d_vis, kps_lines, filename=None):
     x_r = np.array([0, cfg.input_shape[1]], dtype=np.float32)
     y_r = np.array([0, cfg.input_shape[0]], dtype=np.float32)
     z_r = np.array([0, 1], dtype=np.float32)
-    
+
     if filename is None:
         ax.set_title('3D vis')
     else:
@@ -130,7 +130,7 @@ def save_obj(v, f, file_name='output.obj'):
     for i in range(len(v)):
         obj_file.write('v ' + str(v[i][0]) + ' ' + str(v[i][1]) + ' ' + str(v[i][2]) + '\n')
     for i in range(len(f)):
-        obj_file.write('f ' + str(f[i][0]+1) + ' ' + str(f[i][1]+1) + ' ' + str(f[i][2]+1) + '\n') 
+        obj_file.write('f ' + str(f[i][0]+1) + ' ' + str(f[i][1]+1) + ' ' + str(f[i][2]+1) + '\n')
     obj_file.close()
 
 def perspective_projection(vertices, cam_param):
@@ -142,11 +142,12 @@ def perspective_projection(vertices, cam_param):
     vertices[:, 1] = vertices[:, 1] * fy / vertices[:, 2] + cy
     return vertices
 
-def render_mesh(img, vertices, faces, cam_param, mesh_as_vertices=False):
+def render_mesh(img, vertices, faces, cam_param, mesh_as_vertices=False, color=None):
     if mesh_as_vertices or not PYRENDER_AVAILABLE:
         # to run on cluster where headless pyrender is not supported for A100/V100
         vertices_2d = perspective_projection(vertices, cam_param)
-        img = vis_keypoints(img, vertices_2d, alpha=0.8, radius=2, color=(0, 0, 255))
+        draw_color = color if color is not None else (0, 0, 255)
+        img = vis_keypoints(img, vertices_2d, alpha=0.8, radius=2, color=draw_color)
     else:
         focal, princpt = cam_param['focal'], cam_param['princpt']
         camera = pyrender.IntrinsicsCamera(fx=focal[0], fy=focal[1], cx=princpt[0], cy=princpt[1])
@@ -155,23 +156,22 @@ def render_mesh(img, vertices, faces, cam_param, mesh_as_vertices=False):
                                     [0, -1, 0, 0],
                                     [0, 0, -1, 0],
                                     [0, 0, 0, 1]])
-        
+
 
         # render material
-        base_color = (1.0, 193/255, 193/255, 1.0)
+        if color is not None:
+            # convert BGR [0-255] to RGBA [0-1]
+            b, g, r = color
+            base_color = (r/255.0, g/255.0, b/255.0, 1.0)
+        else:
+            base_color = (0.7, 0.7, 0.7, 1.0)
         material = pyrender.MetallicRoughnessMaterial(
-                metallicFactor=0,
-                alphaMode='OPAQUE',
-                baseColorFactor=base_color)
-        
-        material_new = pyrender.MetallicRoughnessMaterial(
                 metallicFactor=0.1,
                 roughnessFactor=0.4,
                 alphaMode='OPAQUE',
-                emissiveFactor=(0.2, 0.2, 0.2),
-                baseColorFactor=(0.7, 0.7, 0.7, 1))  
-        material = material_new
-        
+                emissiveFactor=(0.1, 0.1, 0.1),
+                baseColorFactor=base_color)
+
         # get body mesh
         body_trimesh = trimesh.Trimesh(vertices, faces, process=False)
         body_mesh = pyrender.Mesh.from_trimesh(body_trimesh, material=material)
@@ -179,7 +179,7 @@ def render_mesh(img, vertices, faces, cam_param, mesh_as_vertices=False):
         # prepare camera and light
         light = pyrender.DirectionalLight(color=np.ones(3), intensity=2.0)
         cam_pose = pyrender2opencv @ np.eye(4)
-        
+
         # build scene
         scene = pyrender.Scene(bg_color=[0.0, 0.0, 0.0, 0.0],
                                         ambient_light=(0.3, 0.3, 0.3))
@@ -191,7 +191,7 @@ def render_mesh(img, vertices, faces, cam_param, mesh_as_vertices=False):
         r = pyrender.OffscreenRenderer(viewport_width=img.shape[1],
                                         viewport_height=img.shape[0],
                                         point_size=1.0)
-        
+
         color, _ = r.render(scene, flags=pyrender.RenderFlags.RGBA)
         color = color.astype(np.float32) / 255.0
         alpha = 0.8 # set transparency in [0.0, 1.0]

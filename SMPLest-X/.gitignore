@@ -18,3 +18,4 @@ demo
 *.pt.tar.gz.part.2
 *.pt.tar.gz.part.3
 *.npy
+*.zip

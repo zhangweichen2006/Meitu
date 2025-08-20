@@ -20,7 +20,7 @@ mkdir -p "$OUTPUT_PATH"
 # convert video to frames
 case "$EXT" in
     mp4|avi|mov|mkv|flv|wmv|webm|mpeg|mpg)
-        ffmpeg -y -i "$REPO_ROOT/demo/$FILE_NAME" -f image2 -vf fps=${FPS}/1 -qscale 0 "${IMG_PATH}/%06d.jpg"
+        ffmpeg -y -i "$REPO_ROOT/demo/$FILE_NAME" -f image2 -vf fps=${FPS}/1 -q:v 2 "${IMG_PATH}/%06d.jpg"
         ;;
     jpg|jpeg|png|bmp|gif|tiff|tif|webp|svg)
         cp "$REPO_ROOT/demo/$FILE_NAME" "$IMG_PATH/000001.$EXT"
@@ -40,13 +40,16 @@ if [ "$END_COUNT" -eq 0 ]; then
 fi
 
 # inference with smplest_x
+# forward any extra args (e.g., --multi_person) to python entrypoint
+EXTRA_ARGS="${@:4}"
 PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}" \
 python "$REPO_ROOT/main/inference.py" \
     --num_gpus 1 \
     --file_name "$NAME" \
     --ckpt_name "$CKPT_NAME" \
     --end "$END_COUNT" \
-    ${HUMAN_MODEL_PATH:+--human_model_path "$HUMAN_MODEL_PATH"}
+    ${HUMAN_MODEL_PATH:+--human_model_path "$HUMAN_MODEL_PATH"} \
+    $EXTRA_ARGS
 
 
 # convert frames to video
@@ -57,7 +60,7 @@ case "$EXT" in
             echo "No output frames were generated in $OUTPUT_PATH. Aborting without cleanup so you can inspect the workspace."
             exit 1
         fi
-        ffmpeg -y -f image2 -r ${FPS} -i "${OUTPUT_PATH}/%06d.jpg" -vcodec mjpeg -qscale 0 -pix_fmt yuv420p "$REPO_ROOT/demo/result_${NAME}.mp4"
+        ffmpeg -y -framerate ${FPS} -i "${OUTPUT_PATH}/%06d.jpg" -c:v libx264 -pix_fmt yuv420p -preset veryfast -crf 18 "$REPO_ROOT/demo/result_${NAME}.mp4"
         ;;
     jpg|jpeg|png|bmp|gif|tiff|tif|webp|svg)
         cp "$OUTPUT_PATH/000001.$EXT" "$REPO_ROOT/demo/result_$FILE_NAME"
