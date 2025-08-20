@@ -1,0 +1,5 @@
+# 通过跳板 42.81.80.132:34185，目标 10.41.32.172:31047
+scp -J weichen.zhang@42.81.80.132:34185 -P 31047 \
+  root@10.41.32.172:/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/SMPLest-X/demo/result_Download.mp4 ~/Downloads
+
+scp -r ~/Downloads/local-dir debug-H20-0:/path/on/server/
