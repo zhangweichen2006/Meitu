@@ -1,0 +1,3 @@
+sshtunnel
+pyyaml
+paramiko<3.0

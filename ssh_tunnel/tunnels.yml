@@ -1,0 +1,20 @@
+tunnels:
+  - name: vnc-tunnel
+    ssh_host: 8.140.33.88
+    ssh_port: 34185
+    ssh_user: weichen.zhang
+    ssh_key: null
+    ssh_key_pass: null
+    remote_host: 10.41.32.172
+    remote_port: 30870
+    local_port: 30870
+
+  - name: ssh-tunnel
+    ssh_host: 8.140.33.88
+    ssh_port: 34185
+    ssh_user: weichen.zhang
+    ssh_key: null
+    ssh_key_pass: null
+    remote_host: 10.41.32.172
+    remote_port: 30844
+    local_port: 30844
