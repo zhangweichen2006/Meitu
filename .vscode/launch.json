@@ -1,0 +1,37 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "cwd": "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/SMPLest-X",
+            "env": {
+                "PYTHONPATH": "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/SMPLest-X:${env:PYTHONPATH}"
+            },
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--num_gpus",
+                "1",
+                "--exp_name",
+                "test_smplest_x_h",
+                "--result_path",
+                "output/test",
+                "--ckpt_idx",
+                "30",
+                "--testset", "Download.mp4"
+            ]
+        }
+    ]
+}
+// --num_gpus 1 \
+// --exp_name test_$TESTSET \
+// --result_path $CKPT_PATH \
+// --ckpt_idx $CKPT_ID \
+// --testset $TESTSET
+// smplest_x_h Download.mp4 3
