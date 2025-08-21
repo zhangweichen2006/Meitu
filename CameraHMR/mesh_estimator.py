@@ -49,7 +49,7 @@ def resize_image(img, target_size):
     return aspect_ratio, final_img
 
 class HumanMeshEstimator:
-    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False):
+    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, img_output_only=False):
         self.device = (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
         self.model = self.init_model()
         self.detector = self.init_detector(threshold)
@@ -58,6 +58,7 @@ class HumanMeshEstimator:
         self.normalize_img = Normalize(mean=IMAGE_MEAN, std=IMAGE_STD)
         self.mesh_opacity = mesh_opacity
         self.same_mesh_color = same_mesh_color
+        self.img_output_only = img_output_only
 
     def init_cam_model(self):
         model = FLNet()
@@ -125,7 +126,7 @@ class HumanMeshEstimator:
         smpl.body_pose[0][0][:] = np.zeros(3)
 
 
-    def process_image(self, img_path, output_img_folder, i):
+    def process_image(self, img_path, output_img_folder, i, no_id=True):
         img_cv2 = cv2.imread(str(img_path))
         if img_cv2 is None:
             try:
@@ -142,9 +143,12 @@ class HumanMeshEstimator:
                 return
 
         fname, img_ext = os.path.splitext(os.path.basename(img_path))
-        overlay_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}_{i:06d}{img_ext}')
-        smpl_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}_{i:06d}.smpl')
-        mesh_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}_{i:06d}.obj')
+        if no_id:
+            suffix=''
+        else:
+            suffix=f'_{i:06d}'
+        overlay_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}{suffix}{img_ext}')
+        mesh_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}{suffix}.obj')
 
         # Detect humans in the image
         det_out = self.detector(img_cv2)
@@ -167,9 +171,10 @@ class HumanMeshEstimator:
 
             output_vertices, output_joints, output_cam_trans = self.get_output_mesh(out_smpl_params, out_cam, batch)
 
-            mesh = trimesh.Trimesh(output_vertices[0].cpu().numpy() , self.smpl_model.faces,
-                            process=False)
-            mesh.export(mesh_fname)
+            if not self.img_output_only:
+                mesh = trimesh.Trimesh(output_vertices[0].cpu().numpy() , self.smpl_model.faces,
+                                process=False)
+                mesh.export(mesh_fname)
 
             # Render overlay
             focal_length = (focal_length_[0], focal_length_[0])
