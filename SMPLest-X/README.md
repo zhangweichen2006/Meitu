@@ -8,16 +8,15 @@ license_link: LICENSE
 
 This work is the extended version of [SMPLer-X](https://arxiv.org/abs/2309.17448). This new codebase is designed for easy installation and flexible development, enabling seamless integration of new methods with the pretrained SMPLest-X model.
 
-## Useful links
+# Video test
 
-<div align="center">
-    <a href="https://github.com/wqyin/SMPLest-X" class="button"><b>[SMPLest-X]</b></a> &nbsp;&nbsp;&nbsp;&nbsp;
-    <a href="https://arxiv.org/abs/2501.09782" class="button"><b>[arXiv]</b></a> &nbsp;&nbsp;&nbsp;&nbsp;
-    <a href="https://caizhongang.github.io/projects/SMPLer-X/" class="button"><b>[Homepage]</b></a> &nbsp;&nbsp;&nbsp;&nbsp;
-    <a href="https://youtu.be/DepTqbPpVzY" class="button"><b>[Video]</b></a> &nbsp;&nbsp;&nbsp;&nbsp;
-    <a href="https://github.com/caizhongang/SMPLer-X" class="button"><b>[SMPLer-X]</b></a> &nbsp;&nbsp;&nbsp;&nbsp;
-    <a href="https://github.com/open-mmlab/mmhuman3d" class="button"><b>[MMHuman3D]</b></a>
-</div>
+# Image test
+PYTHONPATH="/home/cevin/Meitu/SMPLest-X:$PYTHONPATH" python /home/cevin/Meitu/SMPLest-X/main/inference.py \
+  --num_gpus 1 \
+  --ckpt_name smplest_x_h \
+  --image_dir /home/cevin/Meitu/SMPLest-X/demo/raw/tests \
+  --output_dir /home/cevin/Meitu/SMPLest-X/demo/output_frames/tests \
+  --multi_person
 
 ## Citation
 ```text

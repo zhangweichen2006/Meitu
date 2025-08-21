@@ -3,6 +3,8 @@ import os
 import cv2
 import torch
 import copy
+from ..utils.numpy_compat import ensure_numpy_legacy_aliases
+ensure_numpy_legacy_aliases()
 import smplx
 import pickle
 import numpy as np
@@ -35,7 +37,7 @@ class DatasetKeypoints(Dataset):
             'replicate': cv2.BORDER_REPLICATE,
         }[cfg.DATASETS.get('BORDER_MODE', 'constant')]
 
-        self.img_dir = DATASET_FOLDERS[dataset] 
+        self.img_dir = DATASET_FOLDERS[dataset]
         self.data = np.load(DATASET_FILES[is_train][dataset], allow_pickle=True)
         self.imgname = self.data['imgname']
         # Bounding boxes are assumed to be in the center and scale format
@@ -47,7 +49,7 @@ class DatasetKeypoints(Dataset):
         elif 'gtkps' in self.data:
             self.keypoints = self.data['gtkps'][:,:NUM_JOINTS]
         else:
-            self.keypoints = np.zeros((len(self.imgname), NUM_JOINTS, 3))    
+            self.keypoints = np.zeros((len(self.imgname), NUM_JOINTS, 3))
         self.proj_verts = self.data['proj_verts']
         self.length = self.scale.shape[0]
 
@@ -80,7 +82,7 @@ class DatasetKeypoints(Dataset):
                                       self.proj_verts[index].copy(),
                                       self.IMG_SIZE, self.IMG_SIZE,
                                       self.MEAN, self.STD, self.is_train, augm_config,
-                                      is_bgr=True, 
+                                      is_bgr=True,
                                       use_skimage_antialias=self.use_skimage_antialias,
                                       border_mode=self.border_mode,
                                       dataset=self.dataset
@@ -90,7 +92,7 @@ class DatasetKeypoints(Dataset):
         item['proj_verts'] = self.proj_verts[index].copy()
         item['proj_verts_cropped'] = proj_verts_cropped
         item['img'] = img_patch
-        item['img_disp'] = img_patch_cv      
+        item['img_disp'] = img_patch_cv
         item['box_center'] = new_center
         item['box_size'] = bbox_w
         item['img_size'] = 1.0 * img_size.copy()
@@ -98,9 +100,9 @@ class DatasetKeypoints(Dataset):
         item['_trans'] = trans
         item['imgname'] = imgname
         item['dataset'] = self.dataset
-      
+
         return item
 
     def __len__(self):
         return int(len(self.imgname))
-        
+

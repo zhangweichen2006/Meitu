@@ -11,7 +11,7 @@ os.environ['PYOPENGL_PLATFORM'] = 'egl'
 class Renderer(object):
 
     def __init__(self, focal_length=600, img_w=512, img_h=512, faces=None,
-                 same_mesh_color=False):
+                 same_mesh_color=False, mesh_opacity=0.5):
         self.renderer = pyrender.OffscreenRenderer(viewport_width=img_w,
                                                    viewport_height=img_h,
                                                    point_size=1.0)
@@ -19,6 +19,8 @@ class Renderer(object):
         self.focal_length = focal_length
         self.faces = faces
         self.same_mesh_color = same_mesh_color
+        # 0 -> fully transparent overlay; 1 -> fully opaque mesh
+        self.mesh_opacity = float(mesh_opacity)
 
 
     def render_front_view(self, verts, bg_img_rgb=None, bg_color=(1., 1., 1., 1.)):
@@ -47,10 +49,15 @@ class Renderer(object):
             mesh = trimesh.Trimesh(verts[n], self.faces)
             mesh.apply_transform(rot)
             if self.same_mesh_color:
-                mesh_color =colorsys.hsv_to_rgb(1.0, 0.6, 1.0)
-
+                # Use a neutral gray for all meshes
+                mesh_color = (1.0, 0.6, 1.0)
             else:
-                mesh_color = colorsys.hsv_to_rgb((float(n) / num_people), 0.6, 1.0)
+                # Default to neutral gray when there's only one person
+                if num_people == 1:
+                    mesh_color = (1.0, 0.6, 1.0)
+                else:
+                    # Distinct hues for multiple people
+                    mesh_color = colorsys.hsv_to_rgb((float(n) / num_people), 0.6, 1.0)
             material = pyrender.MetallicRoughnessMaterial(
                 metallicFactor=0.2,
                 alphaMode='OPAQUE',
@@ -68,7 +75,7 @@ class Renderer(object):
             valid_mask = (depth_map > 0)[:,:,None]
             # bg_img_rgb[mask] = color_rgb[mask]
             # return bg_img_rgb
-            visible_weight =0.9
+            visible_weight = self.mesh_opacity
             output_img = (
                 color_rgb[:, :, :3] * valid_mask * visible_weight
                 + bg_img_rgb * (1-valid_mask) +

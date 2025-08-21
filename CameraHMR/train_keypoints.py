@@ -26,6 +26,7 @@ from core.densekp_trainer import DenseKP
 from core.utils.pylogger import get_pylogger
 from core.utils.misc import task_wrapper, log_hyperparameters
 from pytorch_lightning.strategies import DDPStrategy
+from core.utils.torch_compat import torch as _torch_compat  # registers safe globals on import
 import signal
 signal.signal(signal.SIGUSR1, signal.SIG_DFL)
 log = get_pylogger(__name__)
@@ -54,8 +55,8 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
 
     # Setup checkpoint saving
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
-        dirpath=os.path.join(cfg.paths.output_dir, 'checkpoints'), 
-        every_n_train_steps=cfg.GENERAL.CHECKPOINT_STEPS, 
+        dirpath=os.path.join(cfg.paths.output_dir, 'checkpoints'),
+        every_n_train_steps=cfg.GENERAL.CHECKPOINT_STEPS,
         save_last=True,
         save_top_k=cfg.GENERAL.CHECKPOINT_SAVE_TOP_K,
         monitor='val_loss'
@@ -64,7 +65,7 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     rich_callback = pl.callbacks.TQDMProgressBar(refresh_rate=100)
     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='step')
     callbacks = [
-        checkpoint_callback, 
+        checkpoint_callback,
         lr_monitor,
         rich_callback
     ]

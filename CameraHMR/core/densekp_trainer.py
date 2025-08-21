@@ -1,5 +1,6 @@
 import os
 import torch
+from .utils.torch_compat import torch as _torch_compat  # registers safe globals on import
 import numpy as np
 import torch.nn as nn
 from loguru import logger
@@ -29,11 +30,11 @@ class DenseKP(pl.LightningModule):
 
         # Backbone feature extractor
         self.backbone = create_backbone()
-        self.backbone.load_state_dict(torch.load(VITPOSE_BACKBONE, map_location='cpu')['state_dict'])
+        self.backbone.load_state_dict(torch.load(VITPOSE_BACKBONE, map_location='cpu', weights_only=True)['state_dict'])
 
         self.keypoint_2d_loss = Keypoint2DLoss(loss_type='l1')
         self.head = build_keypoints_head()
-        self.validation_step_output = []        
+        self.validation_step_output = []
         self.automatic_optimization = False
         self.criterion_keypoints = nn.MSELoss(reduction='none')
 
@@ -52,13 +53,13 @@ class DenseKP(pl.LightningModule):
 
         pred_vertices = output['pred_keypoints'][0].detach().cpu().numpy()
         pred_vertices = (pred_vertices+0.5)*self.cfg.MODEL.IMAGE_SIZE
- 
+
         confidences = pred_vertices[:, 2]
         ax.scatter(pred_vertices[:, 0], pred_vertices[:, 1], s=1.0)# s=0.5)
         save_filename = os.path.join(save_dir, f'result_{self.current_epoch:04d}')
         plt.savefig(save_filename)
-        
-        
+
+
     def get_parameters(self):
         all_params = list(self.head.parameters())
         all_params += list(self.backbone.parameters())
@@ -83,7 +84,7 @@ class DenseKP(pl.LightningModule):
 
 
     def compute_loss(self, batch: Dict, output: Dict, train: bool = True) -> torch.Tensor:
-        
+
         pred_keypoints = output['pred_keypoints']
         gt_keypoints_2d_cropped = batch['proj_verts_cropped']
         batch_size = output['pred_keypoints'].shape[0]
@@ -110,7 +111,7 @@ class DenseKP(pl.LightningModule):
             keypoint_2_sigma_sq = 2.0 * pred_sigmas_square
             kpts_loss = torch.mean(kpts_sq_diffs * (1.0 / keypoint_2_sigma_sq))
             sigmas_loss = torch.mean(torch.log(pred_sigmas_square))
-      
+
         loss_dict = {
             'loss/loss_keypoints': kpts_loss,
             'loss/loss_confidence': sigmas_loss,
@@ -122,7 +123,7 @@ class DenseKP(pl.LightningModule):
 
         return loss, loss_dict
 
-    
+
     def forward(self, batch: Dict) -> Dict:
         return self.forward_step(batch, train=False)
 
@@ -131,22 +132,22 @@ class DenseKP(pl.LightningModule):
 
         batch = joint_batch['img']
         optimizer = self.optimizers(use_pl_optimizer=True)
-  
+
         batch_size = batch['img'].shape[0]
         output = self.forward_step(batch, train=True)
         pred_smpl_params = output['pred_keypoints']
-       
+
         loss, loss_dict = self.compute_loss(batch, output, train=True)
 
 
         optimizer.zero_grad()
         self.manual_backward(loss)
         optimizer.step()
- 
+
         self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=False,sync_dist=True)
         return output
 
-   
+
 
     def validation_step(self, batch: Dict, batch_idx: int, dataloader_idx=0) -> Dict:
 
@@ -165,9 +166,9 @@ class DenseKP(pl.LightningModule):
         proj_verts_loss = (proj_verts_loss.mean(-1))
 
         if dataloader_idx==0:
-            self.log('val_loss',proj_verts_loss.mean(), logger=True, sync_dist=True)    
+            self.log('val_loss',proj_verts_loss.mean(), logger=True, sync_dist=True)
         self.validation_step_output.append({'val_loss': proj_verts_loss,  'dataloader_idx': dataloader_idx})
-    
+
 
     def on_validation_epoch_end(self, dataloader_idx=0):
         outputs = self.validation_step_output
@@ -177,9 +178,9 @@ class DenseKP(pl.LightningModule):
         dataloader_outputs = [x for x in outputs if x.get('dataloader_idx') == 0]
         if dataloader_outputs:  # Ensure there are outputs for this dataloader
             avg_val_loss = torch.stack([x['val_loss'] for x in dataloader_outputs]).mean()
-          
+
             logger.info('kp2d: '+str(dataloader_idx)+str(avg_val_loss))
-         
+
         if dataloader_idx==0:
             self.log('val_loss',avg_val_loss, logger=True, sync_dist=True)
 
@@ -188,4 +189,3 @@ class DenseKP(pl.LightningModule):
 
     def on_test_epoch_end(self):
         return self.on_validation_epoch_end()
-   

@@ -1,2 +1,10 @@
 *.pyc
 *.ckpt
+*.npz
+*.pt
+*.pth
+*.pkl
+*.ptl
+*.pthl
+*.zip
+output*

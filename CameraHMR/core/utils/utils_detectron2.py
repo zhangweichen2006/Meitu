@@ -83,7 +83,11 @@ class DefaultPredictor_Lazy:
                 See :doc:`/tutorials/models` for details about the format.
         """
         with torch.no_grad():
+            # Guard against None or invalid inputs
+            if original_image is None:
+                raise ValueError("DefaultPredictor_Lazy received None as image input")
             if self.input_format == "RGB":
+                # Convert BGR->RGB expected by model
                 original_image = original_image[:, :, ::-1]
             height, width = original_image.shape[:2]
             image = self.aug(T.AugInput(original_image)).apply_image(original_image)

@@ -1,5 +1,8 @@
 import torch
+from .utils.torch_compat import torch as _torch_compat  # registers safe globals on import
 import pickle
+from .utils.numpy_compat import ensure_numpy_legacy_aliases
+ensure_numpy_legacy_aliases()
 import smplx
 import pytorch_lightning as pl
 from typing import Dict
@@ -9,14 +12,14 @@ import numpy as np
 
 from .backbones import create_backbone
 from .losses import (
-    Keypoint3DLoss, Keypoint2DLoss, Keypoint2DLossScaled, 
+    Keypoint3DLoss, Keypoint2DLoss, Keypoint2DLossScaled,
     ParameterLoss, VerticesLoss, TranslationLoss
 )
 from .cam_model.fl_net import FLNet
 from .smpl_wrapper import SMPL2 as SMPL, SMPLLayer
 from .heads.smpl_head_cliff import build_smpl_head
 from .utils.train_utils import (
-    trans_points2d_parallel, load_valid, perspective_projection, 
+    trans_points2d_parallel, load_valid, perspective_projection,
     convert_to_full_img_cam
 )
 from .utils.eval_utils import pck_accuracy, reconstruction_error
@@ -24,7 +27,7 @@ from .utils.geometry import aa_to_rotmat
 from .utils.pylogger import get_pylogger
 from .utils.renderer_cam import render_image_group
 from .constants import (
-    NUM_JOINTS, H36M_TO_J14, CAM_MODEL_CKPT, DOWNSAMPLE_MAT, 
+    NUM_JOINTS, H36M_TO_J14, CAM_MODEL_CKPT, DOWNSAMPLE_MAT,
     REGRESSOR_H36M, VITPOSE_BACKBONE, SMPL_MODEL_DIR
 )
 
@@ -33,19 +36,19 @@ log = get_pylogger(__name__)
 class CameraHMR(pl.LightningModule):
     """
     Pytorch Lightning Module for Camera Human Mesh Recovery (CameraHMR).
-    This module integrates backbone feature extraction, camera modeling, SMPL fitting, 
+    This module integrates backbone feature extraction, camera modeling, SMPL fitting,
     and loss functions for training a 3D human mesh recovery pipeline.
     """
 
     def __init__(self, cfg: CfgNode):
         super().__init__()
-        
+
         self.save_hyperparameters(logger=False, ignore=['init_renderer'])
         self.cfg = cfg
 
         # Backbone feature extractor
         self.backbone = create_backbone()
-        self.backbone.load_state_dict(torch.load(VITPOSE_BACKBONE, map_location='cpu')['state_dict'])
+        self.backbone.load_state_dict(torch.load(VITPOSE_BACKBONE, map_location='cpu', weights_only=True)['state_dict'])
 
         # Camera model
         self.cam_model = FLNet()
@@ -106,13 +109,13 @@ class CameraHMR(pl.LightningModule):
         # Use RGB image as input
         x = batch['img']
         batch_size = x.shape[0]
-        
+
         # Compute conditioning features using the backbone
         # if using ViT backbone, we need to use a different aspect ratio
         conditioning_feats = self.backbone(x[:,:,:,32:-32])
 
         cx, cy = batch['box_center'][:, 0], batch['box_center'][:, 1]
-    
+
         b = batch['box_size']
         img_h = batch['img_size'][:,0]
         img_w = batch['img_size'][:,1]
@@ -129,7 +132,7 @@ class CameraHMR(pl.LightningModule):
            fl_h = (img_h / (2 * torch.tan(vfov / 2)))
            cam_intrinsics[:,0,0]=fl_h
            cam_intrinsics[:,1,1]=fl_h
- 
+
 
         # Original
         bbox_info = torch.stack([cx - img_w / 2., cy - img_h / 2., b],
@@ -157,7 +160,7 @@ class CameraHMR(pl.LightningModule):
 
         output['pred_keypoints_3d'] = pred_keypoints_3d.reshape(batch_size, -1, 3)
         output['pred_vertices'] = pred_vertices.reshape(batch_size, -1, 3)
-        
+
         # Store useful regression outputs to the output dict
         output['pred_cam'] = pred_cam
         output['pred_smpl_params'] = {k: v.clone() for k,v in pred_smpl_params.items()}
@@ -175,9 +178,9 @@ class CameraHMR(pl.LightningModule):
             focal_length=batch['cam_int'][:, 0, 0],
         )
 
-      
+
         output['pred_cam_t'] = cam_t
-        
+
         joints2d = perspective_projection(
             output['pred_keypoints_3d'],
             rotation=torch.eye(3, device=device).unsqueeze(0).expand(batch_size, -1, -1),
@@ -199,7 +202,7 @@ class CameraHMR(pl.LightningModule):
         output['pred_keypoints_2d'] = joints2d.reshape(batch_size, -1, 2)
         import numpy as np
 
-     
+
         return output, fl_h
 
     def perspective_projection_vis(self, input_batch, output, max_save_img=1):
@@ -215,7 +218,7 @@ class CameraHMR(pl.LightningModule):
             imgname = input_batch['imgname'][i]
             save_filename = os.path.join('.', f'{self.global_step:08d}_{i:02d}_{os.path.basename(imgname)}')
             # focal_length_ = (img_w * img_w + img_h * img_h) ** 0.5  # Assumed fl
-    
+
             focal_length_ = input_batch['cam_int'][i, 0, 0]
             focal_length = (focal_length_, focal_length_)
 
@@ -286,14 +289,14 @@ class CameraHMR(pl.LightningModule):
             loss += self.cfg.LOSS_WEIGHTS['VERTS2D'] * loss_proj_vertices
 
         if self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM']:
-     
+
             gt_verts2d = batch['proj_verts'].clone()
             pred_verts2d = output['pred_verts2d'].clone()
-            
+
             pred_verts2d[:, :, :2] =  (pred_verts2d[:, :, :2] - pred_verts2d[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
             gt_verts2d[:, :, :2] =  (gt_verts2d[:, :, :2] - gt_verts2d[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
             loss_proj_vertices_norm = self.keypoint_2d_loss(pred_verts2d, gt_verts2d)
-            loss += self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM'] * loss_proj_vertices_norm 
+            loss += self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM'] * loss_proj_vertices_norm
 
         if self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_CROP']:
 
@@ -310,7 +313,7 @@ class CameraHMR(pl.LightningModule):
             gt_keypoints_2d = batch['orig_keypoints_2d']
             gt_keypoints_2d[:, :, :2] = 2 * (gt_keypoints_2d[:, :, :2] / img_size) - 1
             loss_keypoints_2d = self.keypoint_2d_loss_scaled(pred_keypoints_2d_clone, gt_keypoints_2d, batch['box_size'], img_size)
-            loss += self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D'] * loss_keypoints_2d 
+            loss += self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D'] * loss_keypoints_2d
 
         if self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_NORM']:
             # This loss would neek full kp loss or crop kp loss to anchor the root joint
@@ -369,11 +372,11 @@ class CameraHMR(pl.LightningModule):
             gn = torch.nn.utils.clip_grad_norm_(self.get_parameters(), self.cfg.TRAIN.GRAD_CLIP_VAL, error_if_nonfinite=True)
             self.log('train/grad_norm', gn, on_step=True, on_epoch=True, prog_bar=True, logger=True,sync_dist=True)
         optimizer.step()
- 
+
         self.log('train/loss', output['losses']['loss'], on_step=True, on_epoch=True, prog_bar=True, logger=False,sync_dist=True)
         return output
 
-   
+
 
     def validation_step(self, batch: Dict, batch_idx: int, dataloader_idx=0) -> Dict:
 
@@ -408,7 +411,7 @@ class CameraHMR(pl.LightningModule):
                 gt_keypoints_3d.float().cpu().numpy(),
                 reduction=None
             )
-         
+
         elif 'emdb' in dataset_names[0]:
             gt_cam_vertices = batch['vertices']
             gt_keypoints_3d = torch.matmul(self.smpl.J_regressor, gt_cam_vertices)
@@ -438,7 +441,7 @@ class CameraHMR(pl.LightningModule):
             pred_keypoints_3d = torch.matmul(self.smpl.J_regressor, pred_cam_vertices)
             pred_pelvis = (pred_keypoints_3d[:, [1], :] + pred_keypoints_3d[:, [2], :]) / 2.0
             pred_keypoints_3d = pred_keypoints_3d - pred_pelvis
-            pred_cam_vertices = pred_cam_vertices - pred_pelvis    
+            pred_cam_vertices = pred_cam_vertices - pred_pelvis
             r_error, _ = reconstruction_error(
                 pred_keypoints_3d.float().cpu().numpy(),
                 gt_keypoints_3d.float().cpu().numpy(),
@@ -479,7 +482,7 @@ class CameraHMR(pl.LightningModule):
                 gt_keypoints_3d.float().cpu().numpy(),
                 reduction=None
             )
- 
+
         img_h = batch['img_size'][:,0]
         img_w = batch['img_size'][:,1]
         device = output['pred_cam'].device
@@ -506,10 +509,10 @@ class CameraHMR(pl.LightningModule):
             mask = gt_kp[:,:,2]>0
             zeros_to_insert = torch.zeros((gt_kp.shape[0], 1, 3)).cuda()
             if '3dpw' in dataset_names[0]:
-                gt_kp = torch.cat((gt_kp[:, :9, :], zeros_to_insert, gt_kp[:, 9:, :]), dim=1)    
+                gt_kp = torch.cat((gt_kp[:, :9, :], zeros_to_insert, gt_kp[:, 9:, :]), dim=1)
                 pck1, avgpck1, _ = (pck_accuracy(pred_kp[:,:18,:2],gt_kp[:,:18,:2],mask[:,:18],0.05))
                 pck2, avgpck2, _ = (pck_accuracy(pred_kp[:,:18,:2],gt_kp[:,:18,:2],mask[:,:18],0.1))
-            else: 
+            else:
                 pck1, avgpck1, _ = (pck_accuracy(pred_kp[:,:18,:2],gt_kp[:,:18,:2],mask[:,:18],0.05))
                 pck2, avgpck2, _ = (pck_accuracy(pred_kp[:,:18,:2],gt_kp[:,:18,:2],mask[:,:18],0.1))
 

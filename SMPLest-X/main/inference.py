@@ -28,6 +28,10 @@ def parse_args():
     parser.add_argument('--multi_person', action='store_true')
     parser.add_argument('--image_path', type=str, default=None,
                         help='Absolute path to a single input image. If set, run single-image inference and ignore --start/--end')
+    parser.add_argument('--image_dir', type=str, default=None,
+                        help='Absolute path to a directory of input images. If set, process all images in the folder and ignore --start/--end')
+    parser.add_argument('--output_dir', type=str, default=None,
+                        help='Optional absolute path to save outputs for --image_dir/--image_path modes. Defaults to demo/output_frames/<name>')
     parser.add_argument('--human_model_path', type=str, default=None,
                         help='Absolute path to human models directory containing smplx assets (e.g., .../human_models/models)')
     args = parser.parse_args()
@@ -86,11 +90,11 @@ def main():
     detector = YOLO(bbox_model)
 
     # Single-image inference path
-    if args.image_path is not None:
+    if args.image_path is not None and args.image_dir is None:
         # If user did not override file_name, derive it from image basename
         if args.file_name == 'test':
             args.file_name = Path(args.image_path).stem
-        output_folder = osp.join(root_dir, 'demo', 'output_frames', args.file_name)
+        output_folder = args.output_dir or osp.join(root_dir, 'demo', 'output_frames', args.file_name)
         os.makedirs(output_folder, exist_ok=True)
 
         # prepare input image
@@ -132,7 +136,7 @@ def main():
         # loop all detected bboxes
         # color palette for different persons (BGR)
         color_palette = [
-            (0, 0, 255),      # red
+            (179, 222, 245),  # beige (BGR)
             (0, 255, 0),      # green
             (255, 0, 0),      # blue
             (0, 255, 255),    # yellow
@@ -191,6 +195,108 @@ def main():
         # save rendered image
         frame_name = os.path.basename(img_path)
         cv2.imwrite(os.path.join(output_folder, frame_name), vis_img[:, :, ::-1])
+        return
+
+    # Directory inference path
+    if args.image_dir is not None:
+        image_dir = args.image_dir
+        if not osp.isabs(image_dir):
+            image_dir = osp.join(root_dir, image_dir)
+        img_paths = []
+        for ext in ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tif', '*.tiff', '*.webp']:
+            img_paths.extend(sorted(Path(image_dir).glob(ext)))
+        if len(img_paths) == 0:
+            raise FileNotFoundError(f"No images found in {image_dir}")
+
+        # derive default output folder
+        name = Path(image_dir).name
+        output_folder = args.output_dir or osp.join(root_dir, 'demo', 'output_frames', name)
+        os.makedirs(output_folder, exist_ok=True)
+
+        # color palette for different persons (BGR)
+        color_palette = [
+            (179, 222, 245), (0, 255, 0), (255, 0, 0), (0, 255, 255), (255, 0, 255), (255, 255, 0),
+            (128, 0, 255), (0, 128, 255), (255, 128, 0)
+        ]
+
+        transform = transforms.ToTensor()
+        for img_path in tqdm(img_paths):
+            try:
+                original_img = load_img(str(img_path))
+                vis_img = original_img.copy()
+                original_img_height, original_img_width = original_img.shape[:2]
+
+                yolo_result = detector.predict(original_img,
+                                        device='cuda',
+                                        classes=0,
+                                        conf=cfg.inference.detection.conf,
+                                        save=cfg.inference.detection.save,
+                                        verbose=cfg.inference.detection.verbose
+                                            )[0]
+                xyxy = yolo_result.boxes.xyxy.detach().cpu().numpy()
+                conf = yolo_result.boxes.conf.detach().cpu().numpy().reshape(-1, 1)
+                yolo_bbox = np.concatenate([xyxy, conf], axis=1) if xyxy.size != 0 else xyxy
+
+                if yolo_bbox.size == 0:
+                    cv2.imwrite(os.path.join(output_folder, img_path.name), original_img[:, :, ::-1])
+                    continue
+
+                if not args.multi_person:
+                    areas = (yolo_bbox[:, 2] - yolo_bbox[:, 0]) * (yolo_bbox[:, 3] - yolo_bbox[:, 1])
+                    largest_idx = int(np.argmax(areas))
+                    yolo_bbox = yolo_bbox[largest_idx:largest_idx+1]
+                else:
+                    yolo_bbox = non_max_suppression(yolo_bbox, cfg.inference.detection.iou_thr)
+
+                num_bbox = len(yolo_bbox)
+                for bbox_id in range(num_bbox):
+                    yolo_bbox_xywh = np.zeros((4))
+                    yolo_bbox_xywh[0] = yolo_bbox[bbox_id][0]
+                    yolo_bbox_xywh[1] = yolo_bbox[bbox_id][1]
+                    yolo_bbox_xywh[2] = abs(yolo_bbox[bbox_id][2] - yolo_bbox[bbox_id][0])
+                    yolo_bbox_xywh[3] = abs(yolo_bbox[bbox_id][3] - yolo_bbox[bbox_id][1])
+
+                    bbox = process_bbox(bbox=yolo_bbox_xywh,
+                                        img_width=original_img_width,
+                                        img_height=original_img_height,
+                                        input_img_shape=cfg.model.input_img_shape,
+                                        ratio=getattr(cfg.data, 'bbox_ratio', 1.25))
+                    img, _, _ = generate_patch_image(cvimg=original_img,
+                                                        bbox=bbox,
+                                                        scale=1.0,
+                                                        rot=0.0,
+                                                        do_flip=False,
+                                                        out_shape=cfg.model.input_img_shape)
+
+                    img = transform(img.astype(np.float32))/255
+                    img = img.cuda()[None,:,:,:]
+                    inputs = {'img': img}
+                    targets = {}
+                    meta_info = {}
+
+                    with torch.no_grad():
+                        out = demoer.model(inputs, targets, meta_info, 'test')
+
+                    mesh = out['smplx_mesh_cam'].detach().cpu().numpy()[0]
+
+                    focal = [cfg.model.focal[0] / cfg.model.input_body_shape[1] * bbox[2],
+                             cfg.model.focal[1] / cfg.model.input_body_shape[0] * bbox[3]]
+                    princpt = [cfg.model.princpt[0] / cfg.model.input_body_shape[1] * bbox[2] + bbox[0],
+                               cfg.model.princpt[1] / cfg.model.input_body_shape[0] * bbox[3] + bbox[1]]
+
+                    vis_img = cv2.rectangle(vis_img, (int(yolo_bbox[bbox_id][0]), int(yolo_bbox[bbox_id][1])),
+                                            (int(yolo_bbox[bbox_id][2]), int(yolo_bbox[bbox_id][3])), (0, 255, 0), 1)
+                    color = color_palette[bbox_id % len(color_palette)]
+                    vis_img = render_mesh(vis_img, mesh, smpl_x.face, {'focal': focal, 'princpt': princpt}, mesh_as_vertices=False, color=color)
+
+                cv2.imwrite(os.path.join(output_folder, img_path.name), vis_img[:, :, ::-1])
+            except Exception as e:
+                msg = f"Skip {img_path} due to error: {e}"
+                try:
+                    demoer.logger.warning(msg)
+                except Exception:
+                    print(msg)
+                continue
         return
 
     start = int(args.start)

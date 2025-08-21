@@ -1,16 +1,17 @@
 import torch
+from .torch_compat import torch as _torch_compat  # registers safe globals on import
 from collections import OrderedDict
 
 def denormalize_images(images):
     images = images * torch.tensor([0.229, 0.224, 0.225], device=images.device).reshape(1, 3, 1, 1)
     images = images + torch.tensor([0.485, 0.456, 0.406], device=images.device).reshape(1, 3, 1, 1)
     return images
-    
+
 def trans_points2d_parallel(keypoints_2d, trans):
     # Augment keypoints with ones to apply affine transformation
     ones = torch.ones((*keypoints_2d.shape[:2], 1), dtype=torch.float64, device=keypoints_2d.device)
     keypoints_augmented = torch.cat([keypoints_2d, ones], dim=-1)
-    
+
     # Apply transformation using batch matrix multiplication
     transformed_keypoints = torch.einsum('bij,bkj->bki', trans, keypoints_augmented)
     return transformed_keypoints[..., :2]
@@ -28,7 +29,7 @@ def strip_prefix_if_present(state_dict, prefix):
 
 def load_valid(model, pretrained_file, skip_list=None):
 
-    pretrained_dict = torch.load(pretrained_file)['state_dict']
+    pretrained_dict = torch.load(pretrained_file, weights_only=True)['state_dict']
     pretrained_dict = strip_prefix_if_present(pretrained_dict, prefix='model')
 
     model_dict = model.state_dict()

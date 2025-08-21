@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import pickle
 from typing import Optional
+from .utils.numpy_compat import ensure_numpy_legacy_aliases
+ensure_numpy_legacy_aliases()
 import smplx
 from smplx.lbs import vertices2joints
 from smplx.utils import SMPLOutput
@@ -23,7 +25,7 @@ class SMPLLayer(smplx.SMPLLayer):
         joints = smpl_output.joints[:, self.joint_map, :]
         extra_joints = vertices2joints(self.J_regressor_extra, smpl_output.vertices)
         joints = torch.cat([joints, extra_joints], dim=1)
-  
+
 
         output = SMPLOutput(vertices=smpl_output.vertices,
                             global_orient=smpl_output.global_orient,
@@ -33,7 +35,7 @@ class SMPLLayer(smplx.SMPLLayer):
                             full_pose=smpl_output.full_pose)
         return output
 
-    
+
 
 class SMPL2(SMPL):
     def __init__(self, *args, **kwargs):

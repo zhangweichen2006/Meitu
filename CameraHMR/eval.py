@@ -25,6 +25,7 @@ from core.camerahmr_trainer import CameraHMR
 from core.cam_model.fl_net import FLNet
 
 from core.utils.pylogger import get_pylogger
+from core.utils.torch_compat import torch  # registers safe globals on import
 import signal
 signal.signal(signal.SIGUSR1, signal.SIG_DFL)
 log = get_pylogger(__name__)
@@ -40,7 +41,7 @@ def eval(cfg: DictConfig) -> Tuple[dict, dict]:
 
     datamodule = DataModule(cfg, dataset_cfg)
     model = CameraHMR.load_from_checkpoint(CHECKPOINT_PATH, strict=False)
-    cam_model_checkpoint = torch.load(CAM_MODEL_CKPT)['state_dict']
+    cam_model_checkpoint = torch.load(CAM_MODEL_CKPT, weights_only=True)['state_dict']
     model.cam_model.load_state_dict(cam_model_checkpoint)
 
     trainer = pl.Trainer()

@@ -2,9 +2,13 @@ import cv2
 import os
 import json
 import torch
+from core.utils.torch_compat import torch as _torch_compat  # registers safe globals on import
+from core.utils.numpy_compat import ensure_numpy_legacy_aliases
+ensure_numpy_legacy_aliases()
 import smplx
 import trimesh
 import numpy as np
+from imageio import v2 as imageio
 from glob import glob
 from torchvision.transforms import Normalize
 from detectron2.config import LazyConfig
@@ -45,17 +49,19 @@ def resize_image(img, target_size):
     return aspect_ratio, final_img
 
 class HumanMeshEstimator:
-    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25):
+    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False):
         self.device = (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
         self.model = self.init_model()
         self.detector = self.init_detector(threshold)
         self.cam_model = self.init_cam_model()
         self.smpl_model = smplx.SMPLLayer(model_path=smpl_model_path, num_betas=NUM_BETAS).to(self.device)
         self.normalize_img = Normalize(mean=IMAGE_MEAN, std=IMAGE_STD)
+        self.mesh_opacity = mesh_opacity
+        self.same_mesh_color = same_mesh_color
 
     def init_cam_model(self):
         model = FLNet()
-        checkpoint = torch.load(CAM_MODEL_CKPT)['state_dict']
+        checkpoint = torch.load(CAM_MODEL_CKPT, weights_only=True)['state_dict']
         model.load_state_dict(checkpoint)
         model.eval()
         return model
@@ -65,7 +71,7 @@ class HumanMeshEstimator:
         model = model.to(self.device)
         model.eval()
         return model
-    
+
     def init_detector(self, threshold):
 
         detectron2_cfg = LazyConfig.load(str(DETECTRON_CFG))
@@ -75,7 +81,7 @@ class HumanMeshEstimator:
         detector = DefaultPredictor_Lazy(detectron2_cfg)
         return detector
 
-    
+
     def convert_to_full_img_cam(self, pare_cam, bbox_height, bbox_center, img_w, img_h, focal_length):
         s, tx, ty = pare_cam[:, 0], pare_cam[:, 1], pare_cam[:, 2]
         tz = 2. * focal_length / (bbox_height * s)
@@ -121,7 +127,20 @@ class HumanMeshEstimator:
 
     def process_image(self, img_path, output_img_folder, i):
         img_cv2 = cv2.imread(str(img_path))
-        
+        if img_cv2 is None:
+            try:
+                # Fallback for formats not handled by OpenCV (e.g., GIF/WEBP)
+                img = imageio.imread(str(img_path))
+                if img.ndim == 2:
+                    img = np.stack([img, img, img], axis=-1)
+                if img.shape[2] == 4:
+                    img = img[:, :, :3]
+                # imageio returns RGB; convert to BGR for downstream detector which expects BGR
+                img_cv2 = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            except Exception as e:
+                print(f"Skipping unreadable image: {img_path} ({e})")
+                return
+
         fname, img_ext = os.path.splitext(os.path.basename(img_path))
         overlay_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}_{i:06d}{img_ext}')
         smpl_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}_{i:06d}.smpl')
@@ -132,7 +151,7 @@ class HumanMeshEstimator:
         det_instances = det_out['instances']
         valid_idx = (det_instances.pred_classes == 0) & (det_instances.scores > 0.5)
         boxes = det_instances.pred_boxes.tensor[valid_idx].cpu().numpy()
-        bbox_scale = (boxes[:, 2:4] - boxes[:, 0:2]) / 200.0 
+        bbox_scale = (boxes[:, 2:4] - boxes[:, 0:2]) / 200.0
         bbox_center = (boxes[:, 2:4] + boxes[:, 0:2]) / 2.0
 
         # Get Camera intrinsics using HumanFoV Model
@@ -155,7 +174,7 @@ class HumanMeshEstimator:
             # Render overlay
             focal_length = (focal_length_[0], focal_length_[0])
             pred_vertices_array = (output_vertices + output_cam_trans.unsqueeze(1)).detach().cpu().numpy()
-            renderer = Renderer(focal_length=focal_length[0], img_w=img_w, img_h=img_h, faces=self.smpl_model.faces, same_mesh_color=True)
+            renderer = Renderer(focal_length=focal_length[0], img_w=img_w, img_h=img_h, faces=self.smpl_model.faces, same_mesh_color=self.same_mesh_color, mesh_opacity=self.mesh_opacity)
             front_view = renderer.render_front_view(pred_vertices_array, bg_img_rgb=img_cv2.copy())
             final_img = front_view
             # Write overlay

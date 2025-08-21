@@ -3,6 +3,8 @@ import os
 import cv2
 import torch
 import copy
+from ..utils.numpy_compat import ensure_numpy_legacy_aliases
+ensure_numpy_legacy_aliases()
 import smplx
 import pickle
 import numpy as np
@@ -35,7 +37,7 @@ class DatasetVal(Dataset):
             'replicate': cv2.BORDER_REPLICATE,
         }[cfg.DATASETS.get('BORDER_MODE', 'constant')]
 
-        self.img_dir = DATASET_FOLDERS[dataset] 
+        self.img_dir = DATASET_FOLDERS[dataset]
         self.data = np.load(DATASET_FILES[is_train][dataset], allow_pickle=True)
         self.imgname = self.data['imgname']
         self.scale = self.data['scale']
@@ -52,7 +54,7 @@ class DatasetVal(Dataset):
             self.pose = np.zeros((len(self.imgname), 24*3), dtype=np.float32)
 
         if 'shape' in self.data:
-            self.betas = self.data['shape'].astype(np.float)[:,:NUM_BETAS] 
+            self.betas = self.data['shape'].astype(np.float)[:,:NUM_BETAS]
         else:
             self.betas = np.zeros((len(self.imgname), 10), dtype=np.float32)
 
@@ -64,7 +66,7 @@ class DatasetVal(Dataset):
             self.keypoints = self.data['body_keypoints_2d']
         else:
             self.keypoints = np.zeros((len(self.imgname), NUM_JOINTS, 3))
-        
+
         if self.keypoints.shape[2]<3:
             ones_array = np.ones((self.keypoints.shape[0],self.keypoints.shape[1],1))
             self.keypoints = np.concatenate((self.keypoints, ones_array), axis=2)
@@ -87,7 +89,7 @@ class DatasetVal(Dataset):
                                     gender='female')
         self.smpl_gt_neutral = smplx.SMPL(SMPL_MODEL_DIR,
                                     gender='neutral')
-        
+
         self.smplx_gt_male = smplx.SMPLX(SMPLX_MODEL_DIR,
                                 gender='male')
         self.smplx_gt_female = smplx.SMPLX(SMPLX_MODEL_DIR,
@@ -199,13 +201,12 @@ class DatasetVal(Dataset):
                         global_orient=torch.from_numpy(item['smpl_params']['global_orient']).unsqueeze(0),
                         body_pose=torch.from_numpy(item['smpl_params']['body_pose']).unsqueeze(0),
                         betas=torch.from_numpy(item['smpl_params']['betas']).unsqueeze(0))
-            
-            gt_vertices = gt_smpl_out.vertices.detach()  
+
+            gt_vertices = gt_smpl_out.vertices.detach()
             item['keypoints_3d'] = torch.matmul(model.J_regressor, gt_vertices[0])
             item['vertices'] = gt_vertices[0].float()
         return item
 
     def __len__(self):
         return int(len(self.imgname))
-        
-       
+

@@ -146,7 +146,8 @@ def render_mesh(img, vertices, faces, cam_param, mesh_as_vertices=False, color=N
     if mesh_as_vertices or not PYRENDER_AVAILABLE:
         # to run on cluster where headless pyrender is not supported for A100/V100
         vertices_2d = perspective_projection(vertices, cam_param)
-        draw_color = color if color is not None else (0, 0, 255)
+        # default to beige (skin-like) in BGR
+        draw_color = color if color is not None else (179, 222, 245)
         img = vis_keypoints(img, vertices_2d, alpha=0.8, radius=2, color=draw_color)
     else:
         focal, princpt = cam_param['focal'], cam_param['princpt']
@@ -164,7 +165,8 @@ def render_mesh(img, vertices, faces, cam_param, mesh_as_vertices=False, color=N
             b, g, r = color
             base_color = (r/255.0, g/255.0, b/255.0, 1.0)
         else:
-            base_color = (0.7, 0.7, 0.7, 1.0)
+            # default to beige (skin-like) in RGBA [0-1]
+            base_color = (245/255.0, 222/255.0, 179/255.0, 1.0)
         material = pyrender.MetallicRoughnessMaterial(
                 metallicFactor=0.1,
                 roughnessFactor=0.4,
