@@ -2,6 +2,8 @@ import cv2
 import os
 import json
 import torch
+import subprocess
+import shutil
 from core.utils.torch_compat import torch as _torch_compat  # registers safe globals on import
 from core.utils.numpy_compat import ensure_numpy_legacy_aliases
 ensure_numpy_legacy_aliases()
@@ -49,7 +51,7 @@ def resize_image(img, target_size):
     return aspect_ratio, final_img
 
 class HumanMeshEstimator:
-    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, img_output_only=False):
+    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False):
         self.device = (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
         self.model = self.init_model()
         self.detector = self.init_detector(threshold)
@@ -58,7 +60,7 @@ class HumanMeshEstimator:
         self.normalize_img = Normalize(mean=IMAGE_MEAN, std=IMAGE_STD)
         self.mesh_opacity = mesh_opacity
         self.same_mesh_color = same_mesh_color
-        self.img_output_only = img_output_only
+        self.save_smpl_obj = save_smpl_obj
 
     def init_cam_model(self):
         model = FLNet()
@@ -171,7 +173,7 @@ class HumanMeshEstimator:
 
             output_vertices, output_joints, output_cam_trans = self.get_output_mesh(out_smpl_params, out_cam, batch)
 
-            if not self.img_output_only:
+            if self.save_smpl_obj:
                 mesh = trimesh.Trimesh(output_vertices[0].cpu().numpy() , self.smpl_model.faces,
                                 process=False)
                 mesh.export(mesh_fname)
@@ -180,10 +182,12 @@ class HumanMeshEstimator:
             focal_length = (focal_length_[0], focal_length_[0])
             pred_vertices_array = (output_vertices + output_cam_trans.unsqueeze(1)).detach().cpu().numpy()
             renderer = Renderer(focal_length=focal_length[0], img_w=img_w, img_h=img_h, faces=self.smpl_model.faces, same_mesh_color=self.same_mesh_color, mesh_opacity=self.mesh_opacity)
-            front_view = renderer.render_front_view(pred_vertices_array, bg_img_rgb=img_cv2.copy())
-            final_img = front_view
+            # Convert BGR (cv2) -> RGB for renderer, then back to BGR for saving
+            bg_img_rgb = cv2.cvtColor(img_cv2.copy(), cv2.COLOR_BGR2RGB)
+            front_view_rgb = renderer.render_front_view(pred_vertices_array, bg_img_rgb=bg_img_rgb)
+            final_img_bgr = cv2.cvtColor(front_view_rgb.astype(np.uint8), cv2.COLOR_RGB2BGR)
             # Write overlay
-            cv2.imwrite(overlay_fname, final_img)
+            cv2.imwrite(overlay_fname, final_img_bgr)
             renderer.delete()
 
 
@@ -194,3 +198,114 @@ class HumanMeshEstimator:
         images_list = [image for ext in image_extensions for image in glob(os.path.join(image_folder, ext))]
         for ind, img_path in enumerate(images_list):
             self.process_image(img_path, out_folder, ind)
+
+    def process_frame(self, frame_bgr, output_img_folder, frame_index):
+        img_cv2 = frame_bgr
+        fname = f"frame_{frame_index:06d}"
+        img_ext = ".png"
+        overlay_fname = os.path.join(output_img_folder, f'{fname}{img_ext}')
+        mesh_fname = os.path.join(output_img_folder, f'{fname}.obj')
+
+        det_out = self.detector(img_cv2)
+        det_instances = det_out['instances']
+        valid_idx = (det_instances.pred_classes == 0) & (det_instances.scores > 0.5)
+        boxes = det_instances.pred_boxes.tensor[valid_idx].cpu().numpy()
+        bbox_scale = (boxes[:, 2:4] - boxes[:, 0:2]) / 200.0
+        bbox_center = (boxes[:, 2:4] + boxes[:, 0:2]) / 2.0
+
+        cam_int = self.get_cam_intrinsics(img_cv2)
+        dataset = Dataset(img_cv2, bbox_center, bbox_scale, cam_int, False, f"frame_{frame_index}")
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=False, num_workers=10)
+
+        for batch in dataloader:
+            batch = recursive_to(batch, self.device)
+            img_h, img_w = batch['img_size'][0]
+            with torch.no_grad():
+                out_smpl_params, out_cam, focal_length_ = self.model(batch)
+
+            output_vertices, output_joints, output_cam_trans = self.get_output_mesh(out_smpl_params, out_cam, batch)
+
+            if self.save_smpl_obj:
+                mesh = trimesh.Trimesh(output_vertices[0].cpu().numpy() , self.smpl_model.faces,
+                                process=False)
+                mesh.export(mesh_fname)
+
+            focal_length = (focal_length_[0], focal_length_[0])
+            pred_vertices_array = (output_vertices + output_cam_trans.unsqueeze(1)).detach().cpu().numpy()
+            renderer = Renderer(focal_length=focal_length[0], img_w=img_w, img_h=img_h, faces=self.smpl_model.faces, same_mesh_color=self.same_mesh_color, mesh_opacity=self.mesh_opacity)
+            bg_img_rgb = cv2.cvtColor(img_cv2.copy(), cv2.COLOR_BGR2RGB)
+            front_view_rgb = renderer.render_front_view(pred_vertices_array, bg_img_rgb=bg_img_rgb)
+            final_img_bgr = cv2.cvtColor(front_view_rgb.astype(np.uint8), cv2.COLOR_RGB2BGR)
+            cv2.imwrite(overlay_fname, final_img_bgr)
+            renderer.delete()
+
+    def _export_video_from_frames(self, frames_dir, video_out_path, fps):
+        pattern = os.path.join(frames_dir, 'frame_%06d.png')
+        os.makedirs(os.path.dirname(video_out_path), exist_ok=True)
+        ffmpeg_path = shutil.which('ffmpeg')
+        fps_value = int(round(fps)) if fps and fps > 0 else 30
+        if ffmpeg_path:
+            cmd = [
+                ffmpeg_path,
+                '-y',
+                '-framerate', str(fps_value),
+                '-start_number', '0',
+                '-i', pattern,
+                '-c:v', 'libx264',
+                '-pix_fmt', 'yuv420p',
+                video_out_path
+            ]
+            try:
+                subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                return
+            except Exception as e:
+                print(f"ffmpeg failed ({e}), falling back to OpenCV VideoWriter...")
+
+        # Fallback: OpenCV VideoWriter
+        frame_paths = sorted([os.path.join(frames_dir, f) for f in os.listdir(frames_dir) if f.startswith('frame_') and f.endswith('.png')])
+        if not frame_paths:
+            print(f"No frames found in {frames_dir} to make a video.")
+            return
+        first = cv2.imread(frame_paths[0])
+        if first is None:
+            print(f"Failed to read first frame {frame_paths[0]}")
+            return
+        height, width = first.shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        writer = cv2.VideoWriter(video_out_path, fourcc, float(fps_value), (width, height))
+        for fp in frame_paths:
+            img = cv2.imread(fp)
+            if img is None:
+                continue
+            writer.write(img)
+        writer.release()
+
+    def run_on_video(self, video_path, out_folder_root=None, export_video=True):
+        if not os.path.exists(video_path):
+            raise FileNotFoundError(f"Video not found: {video_path}")
+        video_basename = os.path.splitext(os.path.basename(video_path))[0]
+        if out_folder_root is None or len(str(out_folder_root).strip()) == 0:
+            out_folder = os.path.join(os.path.dirname(video_path), video_basename)
+        else:
+            out_folder = os.path.join(out_folder_root, video_basename)
+        if not os.path.exists(out_folder):
+            os.makedirs(out_folder)
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise RuntimeError(f"Failed to open video: {video_path}")
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_index = 0
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                self.process_frame(frame, out_folder, frame_index)
+                frame_index += 1
+        finally:
+            cap.release()
+        if export_video:
+            video_out_path = os.path.join(out_folder, f"{video_basename}_overlay.mp4")
+            self._export_video_from_frames(out_folder, video_out_path, fps)
