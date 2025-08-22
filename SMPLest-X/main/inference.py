@@ -1,4 +1,7 @@
 import os
+# Prefer EGL for headless rendering to avoid OSMesa issues
+if 'PYOPENGL_PLATFORM' not in os.environ:
+    os.environ['PYOPENGL_PLATFORM'] = 'egl'
 import os.path as osp
 import argparse
 import numpy as np
