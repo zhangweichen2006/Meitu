@@ -117,3 +117,5 @@ mmseg/.mim
 
 # Pytorch
 *.pth
+
+output

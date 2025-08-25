@@ -54,8 +54,15 @@ def main():
     for i, image_name in tqdm(enumerate(image_names), total=len(image_names)):
         image_path = os.path.join(input_dir, image_name)
         image = cv2.imread(image_path)
+        if image is None:
+            print(f"Skipping unreadable image: {image_path}")
+            continue
 
-        result = inference_model(model, image_path)
+        try:
+            result = inference_model(model, image_path)
+        except Exception as e:
+            print(f"Skipping {image_path}: inference load failed ({e})")
+            continue
         result = result.pred_depth_map.data.cpu().numpy()
 
         normal_map = result.transpose(1, 2, 0) ### (H, W, C)

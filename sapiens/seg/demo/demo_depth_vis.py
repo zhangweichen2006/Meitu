@@ -56,21 +56,41 @@ def main():
     for i, image_name in tqdm(enumerate(image_names), total=len(image_names)):
         image_path = os.path.join(input_dir, image_name)
         image = cv2.imread(image_path) ## has to be bgr image
+        if image is None:
+            print(f"Skipping unreadable image: {image_path}")
+            continue
 
-        result = inference_model(model, image)
+        # Pass image path to match pipeline's LoadImage
+        try:
+            result = inference_model(model, image_path)
+        except Exception as e:
+            print(f"Skipping {image_path}: inference load failed ({e})")
+            continue
         result = result.pred_depth_map.data.cpu().numpy()
         depth_map = result[0] ## H x W
 
         if flip == True:
             image_flipped = cv2.flip(image, 1)
-            result_flipped = inference_model(model, image_flipped)
+            # Save flipped image to a temporary file and run inference with path
+            with tempfile.NamedTemporaryFile(suffix='.png') as tmp:
+                cv2.imwrite(tmp.name, image_flipped)
+                try:
+                    result_flipped = inference_model(model, tmp.name)
+                except Exception:
+                    result_flipped = None
             result_flipped = result_flipped.pred_depth_map.data.cpu().numpy()
             depth_map_flipped = result_flipped[0]
             depth_map_flipped = cv2.flip(depth_map_flipped, 1) ## H x W, flip back
             depth_map = (depth_map + depth_map_flipped) / 2 ## H x W, average
 
-        mask_path = os.path.join(seg_dir, image_name.replace('.png', '.npy').replace('.jpg', '.npy').replace('.jpeg', '.npy'))
-        mask = np.load(mask_path)
+        # Load foreground mask if provided; otherwise treat whole image as foreground
+        mask = None
+        if seg_dir is not None:
+            mask_path = os.path.join(seg_dir, image_name.replace('.png', '.npy').replace('.jpg', '.npy').replace('.jpeg', '.npy'))
+            if os.path.exists(mask_path):
+                mask = np.load(mask_path)
+        if mask is None:
+            mask = np.ones_like(depth_map, dtype=bool)
 
         ##-----------save depth_map to disk---------------------
         save_path = os.path.join(args.output_root, image_name.replace('.png', '.npy').replace('.jpg', '.npy').replace('.jpeg', '.npy'))

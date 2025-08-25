@@ -1,3 +1,14 @@
 *.zip
 *.tar
 data
+*.pkl
+*.pkl
+*.pt
+*.pkl.gz
+*.pt.gz
+*.pth.gz
+*.pkl.gz.part
+*.pt.gz.part
+*.pth.gz.part
+*.npz
+*.npy
