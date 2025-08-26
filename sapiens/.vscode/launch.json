@@ -12,15 +12,15 @@
             "console": "integratedTerminal",
             "args": [
                 "--config",
-                "seg/configs/segformer/segformer.b0.512x512.ade.160k.py",
+                "seg/configs/sapiens_depth/render_people/sapiens_2b_render_people-1024x768.py",
                 "--checkpoint",
-                "seg/checkpoints/segformer.b0.512x512.ade.160k.pth",
+                "/home/cevin/Meitu/sapiens/pretrain/checkpoints/sapiens_2b/sapiens_2b_render_people_epoch_25.pth",
                 "--input",
                 "input/test_data_img/all/_1_小七就是小七呀_来自小红书网页版.jpg",
                 "--output_root",
                 "output/",
                 "--seg_dir",
-                "output/seg_2b/"
+                "output/seg_masks/"
             ]
         }
     ]

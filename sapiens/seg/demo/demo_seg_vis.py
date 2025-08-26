@@ -11,6 +11,9 @@ import os
 from tqdm import tqdm
 import cv2
 import numpy as np
+import tempfile
+from PIL import Image, ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 import torchvision
 torchvision.disable_beta_transforms_warning()
 
@@ -56,12 +59,51 @@ def main():
 
     for i, image_name in tqdm(enumerate(image_names), total=len(image_names)):
         image_path = os.path.join(input_dir, image_name)
-        result = inference_model(model, image_path)
+
+        # Handle truncated images by re-encoding via PIL if needed
+        temp_path = None
+        effective_path = image_path
+        result = None
+
+        # Try inference with original path first, then fallback to PIL if it fails
+        try:
+            result = inference_model(model, image_path)
+        except Exception:
+            # Image failed inference, try PIL cleanup
+            try:
+                print(f"Cleaning truncated image: {image_name}")
+                with Image.open(image_path) as pil_im:
+                    pil_im = pil_im.convert('RGB')
+                    # Convert to numpy array and handle NaN/invalid pixels
+                    img_array = np.array(pil_im)
+                    # Replace any NaN or invalid values with 0
+                    img_array = np.nan_to_num(img_array, nan=0, posinf=255, neginf=0)
+                    # Ensure valid uint8 range
+                    img_array = np.clip(img_array, 0, 255).astype(np.uint8)
+                    # Convert back to PIL and save
+                    cleaned_pil = Image.fromarray(img_array)
+                    tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                    cleaned_pil.save(tmp.name, format='PNG')
+                    temp_path = tmp.name
+                    effective_path = temp_path
+                    print(f"Successfully cleaned truncated image: {image_name}")
+
+                    # Try inference again with cleaned image
+                    result = inference_model(model, effective_path)
+            except Exception as e:
+                print(f"Skipping unreadable image: {image_path} ({e})")
+                continue
+
+        # If we still don't have a result, skip
+        if result is None:
+            print(f"Skipping {image_path}: no result obtained")
+            continue
 
         output_file = os.path.join(args.output_root, os.path.basename(image_path).replace('.jpg', '.png').replace('.jpeg', '.png').replace('.png', '.npy'))
         output_seg_file = os.path.join(args.output_root, os.path.basename(image_path).replace('.jpg', '.png').replace('.jpeg', '.png').replace('.png', '_seg.npy'))
 
-        image = cv2.imread(image_path)
+        # Load image for visualization (use temp path if available)
+        image = cv2.imread(effective_path if temp_path is not None else image_path)
 
         pred_sem_seg = result.pred_sem_seg.data[0].cpu().numpy() ## H x W. seg ids.
         mask = (pred_sem_seg > 0)
@@ -71,7 +113,7 @@ def main():
         # show the results
         vis_image = show_result_pyplot(
             model,
-            image_path,
+            effective_path,
             result,
             title=args.title,
             opacity=args.opacity,
@@ -84,6 +126,13 @@ def main():
         output_file = os.path.join(args.output_root, os.path.basename(image_path))
         vis_image = np.concatenate([image, vis_image], axis=1)
         cv2.imwrite(output_file, vis_image)
+
+        # Clean up temporary file if created
+        if temp_path is not None:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
 
 if __name__ == '__main__':
     main()

@@ -25,7 +25,6 @@ def main():
     parser.add_argument('--input', help='Input image dir')
     parser.add_argument('--output_root', '--output-root', default=None, help='Path to output dir')
     parser.add_argument('--seg_dir', '--seg-dir', default=None, help='Path to segmentation dir')
-    parser.add_argument('--alpha_dir', '--alpha-dir', default=None, help='Path to alpha matte dir (PNG/JPG)')
     parser.add_argument('--device', default='cuda:0', help='Device used for inference')
     parser.add_argument('--flip', action='store_true', help='Flag to indicate if left right flipping')
     args = parser.parse_args()
@@ -54,17 +53,13 @@ def main():
         os.makedirs(args.output_root, exist_ok=True)
 
     seg_dir = args.seg_dir
-    alpha_dir = args.alpha_dir
     flip = args.flip
 
     for i, image_name in tqdm(enumerate(image_names), total=len(image_names)):
         image_path = os.path.join(input_dir, image_name)
         image = cv2.imread(image_path) ## has to be bgr image
-        if image is None:
-            print(f"Skipping unreadable image: {image_path}")
-            continue
 
-        # Ensure readable path: if OpenCV cannot load, re-encode via PIL to a temp PNG
+        # Handle truncated images by re-encoding via PIL if needed
         temp_path = None
         if image is None:
             try:
@@ -73,86 +68,46 @@ def main():
                     tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
                     pil_im.save(tmp.name, format='PNG')
                     temp_path = tmp.name
+                    image = cv2.imread(temp_path)
             except Exception as e:
-                print(f"Skipping unreadable image (PIL failed): {image_path} ({e})")
+                print(f"Skipping unreadable image: {image_path} ({e})")
                 continue
 
-        # Optionally apply foreground mask BEFORE inference
-        masked_tmp = None
-        if alpha_dir is not None or seg_dir is not None:
-            try:
-                mask_pre = None
-                if alpha_dir is not None:
-                    # try common extensions for alpha
-                    base = os.path.splitext(image_name)[0]
-                    cand = [os.path.join(alpha_dir, base + ext) for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']]
-                    alpha_path = next((p for p in cand if os.path.exists(p)), None)
-                    if alpha_path is not None:
-                        with Image.open(alpha_path) as aimg:
-                            aimg = aimg.convert('L')
-                            mask_pre = np.array(aimg) > 0
-                if mask_pre is None and seg_dir is not None:
-                    mask_path_pre = os.path.join(seg_dir, image_name.replace('.png', '.npy').replace('.jpg', '.npy').replace('.jpeg', '.npy'))
-                    mask_pre = np.load(mask_path_pre)
-                if image is None and temp_path is not None:
-                    # ensure we have image array to mask
-                    image = cv2.imread(temp_path)
-                if mask_pre is None:
-                    raise FileNotFoundError('No alpha/seg mask found')
-                if mask_pre.shape[:2] != image.shape[:2]:
-                    mask_pre = cv2.resize(mask_pre.astype(np.uint8), (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST).astype(bool)
-                masked = image.copy()
-                masked[~mask_pre] = 0
-                tmpm = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-                cv2.imwrite(tmpm.name, masked)
-                masked_tmp = tmpm.name
-            except Exception as e:
-                masked_tmp = None
+        effective_path = temp_path if temp_path is not None else image_path
 
-        effective_path = masked_tmp if masked_tmp is not None else (temp_path if temp_path is not None else image_path)
-
-        # Pass image path to match pipeline's LoadImage
         try:
             result = inference_model(model, effective_path)
         except Exception as e:
-            if masked_tmp is not None:
-                try:
-                    os.remove(masked_tmp)
-                except Exception:
-                    pass
             if temp_path is not None:
                 try:
                     os.remove(temp_path)
                 except Exception:
                     pass
-            print(f"Skipping {image_path}: inference load failed ({e})")
+            print(f"Skipping {image_path}: inference failed ({e})")
             continue
         result = result.pred_depth_map.data.cpu().numpy()
         depth_map = result[0] ## H x W
 
         if flip == True:
-            base_for_flip = masked if masked_tmp is not None else (image if image is not None else cv2.imread(effective_path))
-            image_flipped = cv2.flip(base_for_flip, 1)
+            image_flipped = cv2.flip(image, 1)
             # Save flipped image to a temporary file and run inference with path
-            with tempfile.NamedTemporaryFile(suffix='.png') as tmp:
-                cv2.imwrite(tmp.name, image_flipped)
+            with tempfile.NamedTemporaryFile(suffix='.png') as tmp_flip:
+                cv2.imwrite(tmp_flip.name, image_flipped)
                 try:
-                    result_flipped = inference_model(model, tmp.name)
+                    result_flipped = inference_model(model, tmp_flip.name)
                 except Exception:
                     result_flipped = None
-            result_flipped = result_flipped.pred_depth_map.data.cpu().numpy()
-            depth_map_flipped = result_flipped[0]
-            depth_map_flipped = cv2.flip(depth_map_flipped, 1) ## H x W, flip back
-            depth_map = (depth_map + depth_map_flipped) / 2 ## H x W, average
+            if result_flipped is not None:
+                result_flipped = result_flipped.pred_depth_map.data.cpu().numpy()
+                depth_map_flipped = result_flipped[0]
+                depth_map_flipped = cv2.flip(depth_map_flipped, 1) ## H x W, flip back
+                depth_map = (depth_map + depth_map_flipped) / 2 ## H x W, average
 
-        # Load foreground mask if provided; otherwise treat whole image as foreground
-        mask = None
-        if seg_dir is not None:
-            mask_path = os.path.join(seg_dir, image_name.replace('.png', '.npy').replace('.jpg', '.npy').replace('.jpeg', '.npy'))
-            if os.path.exists(mask_path):
-                mask = np.load(mask_path)
-        if mask is None:
-            mask = np.ones_like(depth_map, dtype=bool)
+        mask_path = os.path.join(seg_dir, image_name.replace('.png', '.npy').replace('.jpg', '.npy').replace('.jpeg', '.npy'))
+        if not os.path.exists(mask_path):
+            print(f"Skipping {image_name}: no mask file found at {mask_path}")
+            continue
+        mask = np.load(mask_path)
 
         ##-----------save depth_map to disk---------------------
         save_path = os.path.join(args.output_root, image_name.replace('.png', '.npy').replace('.jpg', '.npy').replace('.jpeg', '.npy'))
@@ -197,25 +152,27 @@ def main():
         ##----------------------------------------------------
         output_file = os.path.join(args.output_root, os.path.basename(image_path))
 
-        # Get masked image for display (second column)
-        if masked_tmp is not None:
-            masked_img = cv2.imread(masked_tmp)
-            if masked_img.shape[:2] != image.shape[:2]:
-                masked_img = cv2.resize(masked_img, (image.shape[1], image.shape[0]))
+        # Get segmentation visualization for display (second column)
+        seg_vis_path = os.path.join(seg_dir, os.path.basename(image_path))
+        if os.path.exists(seg_vis_path):
+            seg_vis_img = cv2.imread(seg_vis_path)
+            if seg_vis_img is not None:
+                # The seg_vis image is 2-column (original + overlay), extract the right half (overlay part)
+                h, w = seg_vis_img.shape[:2]
+                seg_overlay = seg_vis_img[:, w//2:]  # Right half is the segmentation overlay
+                # Resize to match original image size
+                if seg_overlay.shape[:2] != image.shape[:2]:
+                    seg_overlay = cv2.resize(seg_overlay, (image.shape[1], image.shape[0]))
+            else:
+                seg_overlay = np.zeros_like(image)  # Fallback to black image
         else:
-            # No mask applied, use original
-            masked_img = image.copy()
+            seg_overlay = np.zeros_like(image)  # Fallback to black image
 
-        # Create the 4-column output: original, masked, depth, normal
-        vis_image = np.concatenate([image, masked_img, processed_depth, normal_from_depth], axis=1)
+        # Create the 4-column output: original, seg_overlay, depth, normal
+        vis_image = np.concatenate([image, seg_overlay, processed_depth, normal_from_depth], axis=1)
         cv2.imwrite(output_file, vis_image)
 
-        ## cleanup temp file if created
-        if masked_tmp is not None:
-            try:
-                os.remove(masked_tmp)
-            except Exception:
-                pass
+        # Clean up temporary file if created
         if temp_path is not None:
             try:
                 os.remove(temp_path)

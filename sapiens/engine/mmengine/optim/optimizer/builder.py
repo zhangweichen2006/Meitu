@@ -25,7 +25,7 @@ def register_torch_optimizers() -> List[str]:
     """
     torch_optimizers = []
     for module_name in dir(torch.optim):
-        if module_name.startswith('__'):
+        if module_name.startswith('__') or module_name in OPTIMIZERS:
             continue
         _optim = getattr(torch.optim, module_name)
         if inspect.isclass(_optim) and issubclass(_optim,
@@ -79,6 +79,8 @@ def register_dadaptation_optimizers() -> List[str]:
         pass
     else:
         for module_name in ['DAdaptAdaGrad', 'DAdaptAdam', 'DAdaptSGD']:
+            if module_name in OPTIMIZERS:
+                continue
             _optim = getattr(dadaptation, module_name)
             if inspect.isclass(_optim) and issubclass(_optim,
                                                       torch.optim.Optimizer):
@@ -102,7 +104,8 @@ def register_lion_optimizers() -> List[str]:
     except ImportError:
         pass
     else:
-        OPTIMIZERS.register_module(module=Lion)
+        if 'Lion' not in OPTIMIZERS._module_dict:
+            OPTIMIZERS.register_module(module=Lion)
         optimizers.append('Lion')
     return optimizers
 
@@ -123,6 +126,8 @@ def register_sophia_optimizers() -> List[str]:
         pass
     else:
         for module_name in dir(Sophia):
+            if module_name.startswith('__') or module_name in OPTIMIZERS:
+                continue
             _optim = getattr(Sophia, module_name)
             if inspect.isclass(_optim) and issubclass(_optim,
                                                       torch.optim.Optimizer):
@@ -151,6 +156,8 @@ def register_bitsandbytes_optimizers() -> List[str]:
                 'PagedAdamW8bit', 'LAMB8bit', 'LARS8bit', 'RMSprop8bit',
                 'Lion8bit', 'PagedLion8bit', 'SGD8bit'
         ]:
+            if module_name in OPTIMIZERS:
+                continue
             _optim = getattr(bnb.optim, module_name)
             if inspect.isclass(_optim) and issubclass(_optim,
                                                       torch.optim.Optimizer):
@@ -169,7 +176,9 @@ def register_transformers_optimizers():
     except ImportError:
         pass
     else:
-        OPTIMIZERS.register_module(name='Adafactor', module=Adafactor)
+        # Check if Adafactor is already registered to avoid KeyError
+        if 'Adafactor' not in OPTIMIZERS._module_dict:
+            OPTIMIZERS.register_module(name='Adafactor', module=Adafactor)
         transformer_optimizers.append('Adafactor')
     return transformer_optimizers
 

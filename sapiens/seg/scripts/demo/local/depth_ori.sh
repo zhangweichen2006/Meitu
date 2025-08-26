@@ -3,21 +3,15 @@
 cd ../../.. || exit
 SAPIENS_CHECKPOINT_ROOT=/home/${USER}/Meitu/sapiens
 
-# Activate conda environment
-source /home/cevin/miniconda3/etc/profile.d/conda.sh
-conda activate sapiens
-
 #----------------------------set your input and output directories----------------------------------------------
-pwd
 INPUT='../pose/demo/data/itw_videos/reel1'
 SEG_DIR="${SAPIENS_CHECKPOINT_ROOT}/seg/Outputs/vis/itw_videos/reel1_seg/sapiens_1b"
 OUTPUT="${SAPIENS_CHECKPOINT_ROOT}/seg/Outputs/vis/itw_videos/reel1_depth"
-
 #--------------------------MODEL CARD---------------
 # MODEL_NAME='sapiens_0.3b'; CHECKPOINT=$SAPIENS_CHECKPOINT_ROOT/pretrain/checkpoints/sapiens_0.3b/sapiens_0.3b_render_people_epoch_100.pth
 # MODEL_NAME='sapiens_0.6b'; CHECKPOINT=$SAPIENS_CHECKPOINT_ROOT/pretrain/checkpoints/sapiens_0.6b/sapiens_0.6b_render_people_epoch_70.pth
-# MODEL_NAME='sapiens_1b'; CHECKPOINT=$SAPIENS_CHECKPOINT_ROOT/pretrain/checkpoints/sapiens_1b/sapiens_1b_render_people_epoch_88.pth
 MODEL_NAME='sapiens_1b'; CHECKPOINT=$SAPIENS_CHECKPOINT_ROOT/pretrain/checkpoints/sapiens_1b/sapiens_1b_render_people_epoch_88.pth
+# MODEL_NAME='sapiens_2b'; CHECKPOINT=$SAPIENS_CHECKPOINT_ROOT/pretrain/checkpoints/sapiens_2b/sapiens_2b_render_people_epoch_25.pth
 
 DATASET='render_people'
 MODEL="${MODEL_NAME}_${DATASET}-1024x768"
