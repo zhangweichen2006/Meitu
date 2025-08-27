@@ -15,6 +15,7 @@ import tempfile
 from matplotlib import pyplot as plt
 from PIL import Image, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+import torch
 import torchvision
 torchvision.disable_beta_transforms_warning()
 
@@ -32,6 +33,7 @@ def main():
     parser.add_argument('--device', default='cuda:0', help='Device used for inference')
     parser.add_argument('--flip', action='store_true', help='Flag to indicate if left right flipping')
     parser.add_argument('--opacity', type=float, default=0.5, help='Opacity of painted segmentation map. In (0, 1] range.')
+    parser.add_argument('--skip_seg', action='store_true', help='Flag to skip segmentation')
     args = parser.parse_args()
 
         # build the depth model from a config file and a checkpoint file
@@ -45,9 +47,10 @@ def main():
         normal_model = revert_sync_batchnorm(normal_model)
 
     # build the segmentation model from a config file and a checkpoint file
-    seg_model = init_model(args.seg_config, args.seg_checkpoint, device=args.device)
-    if args.device == 'cpu':
-        seg_model = revert_sync_batchnorm(seg_model)
+    if not args.skip_seg:
+        seg_model = init_model(args.seg_config, args.seg_checkpoint, device=args.device)
+        if args.device == 'cpu':
+            seg_model = revert_sync_batchnorm(seg_model)
 
     input = args.input
     image_names = []
@@ -109,90 +112,94 @@ def main():
         effective_path = temp_path if temp_path is not None else image_path
 
         # Check if mask exists, generate if not
-        if seg_dir is None:
-            # If no seg_dir provided, create one in output_root
-            seg_dir = os.path.join(args.output_root, 'seg_masks')
-            os.makedirs(seg_dir, exist_ok=True)
+        if not args.skip_seg:
+            if seg_dir is None:
+                # If no seg_dir provided, create one in output_root
+                seg_dir = os.path.join(args.output_root, 'seg_masks')
+                os.makedirs(seg_dir, exist_ok=True)
 
-        mask_path = os.path.join(seg_dir, image_name.replace('.png', '.npy').replace('.jpg', '.npy').replace('.jpeg', '.npy'))
-        seg_vis_path = os.path.join(seg_dir, os.path.basename(image_path))
+            mask_path = os.path.join(seg_dir, image_name.replace('.png', '.npy').replace('.jpg', '.npy').replace('.jpeg', '.npy'))
+            seg_vis_path = os.path.join(seg_dir, os.path.basename(image_path))
 
-        # Generate segmentation if mask doesn't exist
-        if not os.path.exists(mask_path):
-            print(f"Generating segmentation mask for {image_name}...")
-            try:
-                seg_result = inference_model(seg_model, effective_path)
+            # Generate segmentation if mask doesn't exist
+            if not os.path.exists(mask_path):
+                print(f"Generating segmentation mask for {image_name}...")
+                seg_result = inference_model(seg_model, image)
 
-                # Save segmentation mask (.npy)
-                seg_mask = seg_result.pred_sem_seg.data.cpu().numpy()[0] > 0  # Convert to boolean mask
-                np.save(mask_path, seg_mask)
+                if seg_result is None:
+                    continue
 
-                # Save segmentation visualization (.jpg)
-                show_result_pyplot(
-                    seg_model,
-                    effective_path,
-                    seg_result,
-                    title='segmentation',
-                    opacity=args.opacity,
-                    draw_gt=False,
-                    show=False,
-                    save_dir=seg_dir,
-                    out_file=seg_vis_path
-                )
-                print(f"Generated mask: {mask_path}")
 
-            except Exception as e:
-                if temp_path is not None:
-                    try:
-                        os.remove(temp_path)
-                    except Exception:
-                        pass
-                print(f"Skipping {image_name}: segmentation failed ({e})")
-                continue
+            output_file = os.path.join(args.output_root, os.path.basename(image_path).replace('.jpg', '.png').replace('.jpeg', '.png').replace('.png', '.npy'))
+            output_seg_file = os.path.join(args.output_root, os.path.basename(image_path).replace('.jpg', '.png').replace('.jpeg', '.png').replace('.png', '_seg.npy'))
 
-        # Run depth inference with fallback for truncated images
-        depth_result = None
+            # Load image for visualization (use temp path if available)
+            image = cv2.imread(effective_path if temp_path is not None else image_path)
+
+            pred_sem_seg = seg_result.pred_sem_seg.data[0].cpu().numpy() ## H x W. seg ids.
+            mask = (pred_sem_seg > 0)
+            np.save(output_file, mask)
+            np.save(output_seg_file, pred_sem_seg)
+
+            # show the results
+            vis_image = show_result_pyplot(
+                seg_model,
+                effective_path,
+                seg_result,
+                title=args.title,
+                opacity=args.opacity,
+                draw_gt=False,
+                show=False,
+                out_file=None)
+
+            vis_image = cv2.cvtColor(vis_image, cv2.COLOR_RGB2BGR)
+
+            output_file = os.path.join(args.output_root, os.path.basename(image_path))
+            vis_image = np.concatenate([image, vis_image], axis=1)
+            cv2.imwrite(output_file, vis_image)
+
+            # Clean up temporary file if created
+            if temp_path is not None:
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+
+        # Run depth inference
         try:
             depth_result = inference_model(depth_model, effective_path)
-        except Exception:
-            # Try PIL cleanup for truncated images
-            if temp_path is None:  # Haven't tried PIL cleanup yet
+        except Exception as e:
+            if temp_path is not None:
                 try:
-                    print(f"Cleaning truncated image for depth: {image_name}")
-                    with Image.open(image_path) as pil_im:
-                        pil_im = pil_im.convert('RGB')
-                        img_array = np.array(pil_im)
-                        img_array = np.nan_to_num(img_array, nan=0, posinf=255, neginf=0)
-                        img_array = np.clip(img_array, 0, 255).astype(np.uint8)
-                        cleaned_pil = Image.fromarray(img_array)
-                        tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-                        cleaned_pil.save(tmp.name, format='PNG')
-                        temp_path = tmp.name
-                        effective_path = temp_path
-                        image = cv2.imread(temp_path)  # Update image for later use
-                        depth_result = inference_model(depth_model, effective_path)
-                        print(f"Successfully processed truncated image for depth: {image_name}")
-                except Exception as e:
-                    if temp_path is not None:
-                        try:
-                            os.remove(temp_path)
-                        except Exception:
-                            pass
-                    print(f"Skipping {image_path}: depth inference failed ({e})")
-                    continue
-            else:
-                if temp_path is not None:
-                    try:
-                        os.remove(temp_path)
-                    except Exception:
-                        pass
-                print(f"Skipping {image_path}: depth inference failed even with cleaned image")
-                continue
-
-        if depth_result is None:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+            print(f"Skipping {image_path}: inference failed ({e})")
             continue
         depth_result = depth_result.pred_depth_map.data.cpu().numpy()
         depth_map = depth_result[0] ## H x W
+
+
+        if flip == True:
+            image_flipped = cv2.flip(image, 1)
+            # Save flipped image to a temporary file and run inference with path
+            with tempfile.NamedTemporaryFile(suffix='.png') as tmp_flip:
+                cv2.imwrite(tmp_flip.name, image_flipped)
+                try:
+                    result_flipped = inference_model(depth_model, tmp_flip.name)
+                except Exception:
+                    result_flipped = None
+            if result_flipped is not None:
+                result_flipped = result_flipped.pred_depth_map.data.cpu().numpy()
+                depth_map_flipped = result_flipped[0]
+                depth_map_flipped = cv2.flip(depth_map_flipped, 1) ## H x W, flip back
+                depth_map = (depth_map + depth_map_flipped) / 2 ## H x W, average
+
+        mask_path = os.path.join(seg_dir, image_name.replace('.png', '.npy').replace('.jpg', '.npy').replace('.jpeg', '.npy'))
+        if not os.path.exists(mask_path):
+            print(f"Skipping {image_name}: no mask file found at {mask_path}")
+            continue
+        mask = np.load(mask_path)
 
         # Run normal inference with same effective_path
         try:
@@ -215,9 +222,11 @@ def main():
                 cv2.imwrite(tmp_flip.name, image_flipped)
                 try:
                     depth_result_flipped = inference_model(depth_model, tmp_flip.name)
-                    normal_result_flipped = inference_model(normal_model, tmp_flip.name)
                 except Exception:
                     depth_result_flipped = None
+                try:
+                    normal_result_flipped = inference_model(normal_model, tmp_flip.name)
+                except Exception:
                     normal_result_flipped = None
             if depth_result_flipped is not None:
                 depth_result_flipped = depth_result_flipped.pred_depth_map.data.cpu().numpy()
@@ -234,8 +243,8 @@ def main():
 
         ##-----------save depth_map to disk---------------------
         save_path = os.path.join(args.output_root, image_name.replace('.png', '.npy').replace('.jpg', '.npy').replace('.jpeg', '.npy'))
-        np.save(save_path, depth_map)
         depth_map[~mask] = np.nan
+        np.save(save_path, depth_map)
 
         ##----------------------------------------
         depth_foreground = depth_map[mask] ## value in range [0, 1]

@@ -110,10 +110,13 @@ def main():
         np.save(output_file, mask)
         np.save(output_seg_file, pred_sem_seg)
 
-        # show the results
+        # show the results. Prefer ndarray (RGB) to avoid io decode issues on truncated files
+        rgb_image = None
+        if image is not None and isinstance(image, np.ndarray):
+            rgb_image = image[:, :, ::-1]
         vis_image = show_result_pyplot(
             model,
-            effective_path,
+            rgb_image if rgb_image is not None else effective_path,
             result,
             title=args.title,
             opacity=args.opacity,

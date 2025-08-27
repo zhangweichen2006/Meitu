@@ -184,29 +184,105 @@ if __name__ == '__main__':
                     Image.fromarray(img_out).save(out_path)
                     print(f"Saved rendered image to: {out_path}")
 
-                # Default view
+                # 1. Default/Original view
                 render_with_world2cam(base_world2cam, png_path)
+                print("[DEBUG] Finished rendering original view, starting rotated views...")
 
-                # Yaw rotation matrices (+/-45 degrees) applied in camera frame
-                theta = math.radians(45.0)
-                cos_t = math.cos(theta)
-                sin_t = math.sin(theta)
-                Ry_right = torch.tensor([[cos_t, 0.0, sin_t, 0.0],
-                                         [0.0,   1.0, 0.0,   0.0],
-                                         [-sin_t,0.0, cos_t, 0.0],
-                                         [0.0,   0.0, 0.0,   1.0]], dtype=base_world2cam.dtype, device=base_world2cam.device)
-                Ry_left = torch.tensor([[cos_t, 0.0, -sin_t, 0.0],
-                                        [0.0,   1.0, 0.0,    0.0],
-                                        [sin_t, 0.0,  cos_t, 0.0],
-                                        [0.0,   0.0,  0.0,   1.0]], dtype=base_world2cam.dtype, device=base_world2cam.device)
+                # 2-7. Six rotated views: +/- yaw, pitch, roll (75° each)
+                rotation_angle = math.radians(75.0)
+                rotations = [
+                    ('yaw', rotation_angle, '_yaw_pos'),
+                    ('yaw', -rotation_angle, '_yaw_neg'),
+                    ('pitch', rotation_angle, '_pitch_pos'),
+                    ('pitch', -rotation_angle, '_pitch_neg'),
+                    ('roll', rotation_angle, '_roll_pos'),
+                    ('roll', -rotation_angle, '_roll_neg')
+                ]
 
-                right_world2cam = Ry_right @ base_world2cam
-                left_world2cam = Ry_left @ base_world2cam
+                print(f"Generating {len(rotations)} additional rotated views...")
+                for axis, angle, suffix in rotations:
+                    rotated_world2cam = create_rotated_camera(axis, angle)
+                    rotated_path = png_path.rsplit('.', 1)[0] + suffix + '.png'
 
-                right_path = png_path.rsplit('.', 1)[0] + '_right.png'
-                left_path = png_path.rsplit('.', 1)[0] + '_left.png'
-                render_with_world2cam(right_world2cam, right_path)
-                render_with_world2cam(left_world2cam, left_path)
+                    # Render with the rotated camera
+                    if pts_world.numel() == 0:
+                        print(f"[WARN] No valid points for {suffix} view")
+                        continue
+                    ones = torch.ones((pts_world.shape[0], 1), device=pts_world.device, dtype=pts_world.dtype)
+                    pts_world_h = torch.cat([pts_world, ones], dim=1)
+                    pts_cam_h = (rotated_world2cam @ pts_world_h.T).T
+                    pts_cam = pts_cam_h[:, :3]
+                    z = pts_cam[:, 2]
+
+                    # Debug: Check camera transformation
+                    centroid_h = torch.cat([pts_centroid, torch.ones(1, device=pts_world.device, dtype=pts_world.dtype)])
+                    centroid_cam = (rotated_world2cam @ centroid_h)[:3]
+                    print(f"[DEBUG] {suffix}: centroid in camera coords = {centroid_cam.cpu().numpy()}")
+
+                    # Use a very conservative threshold and ensure centroid is in front
+                    front = z > 0.01  # More conservative threshold
+                    if not front.any() or centroid_cam[2] <= 0.01:
+                        print(f"[DEBUG] No points in front of camera for {suffix} view (centroid_z={centroid_cam[2]:.3f})")
+                        continue
+                    pts_cam = pts_cam[front]
+                    cols_filtered = cols[front]
+                    z = z[front]
+
+                    # Match original FOV to keep object size consistent
+                    fov_scale = 1.0
+                    fx = float(max(H, W)) * fov_scale
+                    fy = float(max(H, W)) * fov_scale
+                    cx = float(W) / 2.0
+                    cy = float(H) / 2.0
+                    u = fx * (pts_cam[:, 0] / z) + cx
+                    v = fy * (pts_cam[:, 1] / z) + cy
+                    x = torch.round(u).to(torch.int64)
+                    y = torch.round(v).to(torch.int64)
+                    in_bounds = (x >= 0) & (x < W) & (y >= 0) & (y < H)
+                    if not in_bounds.any():
+                        print(f"[WARN] No projected points inside bounds for {suffix} view")
+                        continue
+                    x = x[in_bounds]
+                    y = y[in_bounds]
+                    z = z[in_bounds]
+                    cols_filtered = cols_filtered[in_bounds]
+                    lin_idx = (y * W + x).detach().cpu().numpy().astype(np.int64)
+                    z_np = z.detach().cpu().numpy()
+                    cols_np = (cols_filtered.detach().cpu().numpy() * 255.0).clip(0, 255).astype(np.uint8)
+                    order = np.lexsort((z_np, lin_idx))
+                    lin_sorted = lin_idx[order]
+                    first_pos = np.unique(lin_sorted, return_index=True)[1]
+                    sel = order[first_pos]
+                    img_out = np.zeros((H, W, 3), dtype=np.uint8)
+                    xs = lin_idx[sel] % W
+                    ys = lin_idx[sel] // W
+                    img_out[ys, xs] = cols_np[sel]
+                    Image.fromarray(img_out).save(rotated_path)
+                    print(f"Saved {axis} {math.degrees(angle):.0f}° view to: {rotated_path}")
+                # Compose a 2x3 grid of the six rotated views
+                try:
+                    base_noext = png_path.rsplit('.', 1)[0]
+                    suffixes = ['_yaw_pos', '_pitch_pos', '_roll_pos', '_yaw_neg', '_pitch_neg', '_roll_neg']
+                    tile_paths = [base_noext + s + '.png' for s in suffixes]
+
+                    tiles = []
+                    for p in tile_paths:
+                        if osp.isfile(p):
+                            tiles.append(Image.open(p).convert('RGB').resize((W, H), Image.Resampling.NEAREST))
+                        else:
+                            tiles.append(Image.new('RGB', (W, H), (0, 0, 0)))
+
+                    grid = Image.new('RGB', (W * 3, H * 2))
+                    for idx, tile in enumerate(tiles):
+                        r = idx // 3
+                        c = idx % 3
+                        grid.paste(tile, (c * W, r * H))
+
+                    grid_path = base_noext + '_grid6.png'
+                    grid.save(grid_path)
+                    print(f"Saved 2x3 grid of six views to: {grid_path}")
+                except Exception as e_grid:
+                    print(f"[WARN] Failed to compose 2x3 grid: {e_grid}")
             except Exception as e:
                 print(f"[WARN] Failed to render multi-view PNGs for {fname}: {e}")
 
@@ -414,35 +490,40 @@ if __name__ == '__main__':
                     cam_to_centroid = pts_centroid - original_cam_pos
                     viewing_distance = torch.norm(cam_to_centroid)
 
-                    theta = math.radians(75.0)  # Changed to 75° as requested
-                    cos_t = math.cos(theta)
-                    sin_t = math.sin(theta)
+                    rotation_angle = math.radians(75.0)  # 75 degrees rotation
 
-                    def create_orbital_camera(yaw_angle: float) -> torch.Tensor:
-                        """Step 1: Rotate camera position around object center. Step 2: Point camera at object center"""
-
-                        # Step 1: Rotate the camera position around the object center (orbital motion)
-                        cos_yaw = math.cos(yaw_angle)
-                        sin_yaw = math.sin(yaw_angle)
+                    def create_rotated_camera(axis: str, angle: float) -> torch.Tensor:
+                        """Step 1: Rotate camera position around object center on specified axis. Step 2: Point camera at object center"""
 
                         # Get the vector from object center to original camera position
                         center_to_cam = original_cam_pos - pts_centroid  # Vector from center to camera
 
-                        # Ensure minimum distance from center for better orbital views
-                        cam_distance = torch.norm(center_to_cam)
-                        if cam_distance < 2.0:
-                            # If too close, extend the distance to 3.0 units
-                            center_to_cam = torch.nn.functional.normalize(center_to_cam, dim=0) * 3.0
-                        else:
-                            # Use 1.2x the original distance for better orbital views
-                            center_to_cam = center_to_cam * 1.2
+                        # Keep camera distance to object center constant (no scaling)
+                        # This preserves subject size across rotated views
+                        # center_to_cam remains unchanged here
 
-                        # Rotate this vector around the Y-axis (yaw rotation around object center)
-                        rotated_center_to_cam = torch.tensor([
-                            cos_yaw * center_to_cam[0] + sin_yaw * center_to_cam[2],
-                            center_to_cam[1],  # Keep Y unchanged
-                            -sin_yaw * center_to_cam[0] + cos_yaw * center_to_cam[2]
-                        ], device=pts_world.device, dtype=pts_world.dtype)
+                        # Step 1: Rotate the camera position around the specified axis
+                        cos_angle = math.cos(angle)
+                        sin_angle = math.sin(angle)
+
+                        if axis == 'yaw':  # Rotation around Y-axis
+                            rotated_center_to_cam = torch.tensor([
+                                cos_angle * center_to_cam[0] + sin_angle * center_to_cam[2],
+                                center_to_cam[1],  # Y unchanged
+                                -sin_angle * center_to_cam[0] + cos_angle * center_to_cam[2]
+                            ], device=pts_world.device, dtype=pts_world.dtype)
+                        elif axis == 'pitch':  # Rotation around X-axis
+                            rotated_center_to_cam = torch.tensor([
+                                center_to_cam[0],  # X unchanged
+                                cos_angle * center_to_cam[1] - sin_angle * center_to_cam[2],
+                                sin_angle * center_to_cam[1] + cos_angle * center_to_cam[2]
+                            ], device=pts_world.device, dtype=pts_world.dtype)
+                        elif axis == 'roll':  # Rotation around Z-axis
+                            rotated_center_to_cam = torch.tensor([
+                                cos_angle * center_to_cam[0] - sin_angle * center_to_cam[1],
+                                sin_angle * center_to_cam[0] + cos_angle * center_to_cam[1],
+                                center_to_cam[2]  # Z unchanged
+                            ], device=pts_world.device, dtype=pts_world.dtype)
 
                         # New camera position after rotation around object center
                         rotated_cam_pos = pts_centroid + rotated_center_to_cam
@@ -452,16 +533,22 @@ if __name__ == '__main__':
 
                         # Create orthogonal camera basis
                         world_up = torch.tensor([0.0, 1.0, 0.0], device=pts_world.device, dtype=pts_world.dtype)
+
+                        # Handle degenerate case where look_dir is parallel to world_up
+                        if torch.abs(torch.dot(look_dir, world_up)) > 0.99:
+                            world_up = torch.tensor([1.0, 0.0, 0.0], device=pts_world.device, dtype=pts_world.dtype)
+
                         right_dir = torch.nn.functional.normalize(torch.cross(look_dir, world_up, dim=0), dim=0)
                         up_dir = torch.nn.functional.normalize(torch.cross(right_dir, look_dir, dim=0), dim=0)
 
-                        print(f"[DEBUG] Orbital camera {yaw_angle:.1f}°: orig_pos={original_cam_pos.cpu().numpy()}, rotated_pos={rotated_cam_pos.cpu().numpy()}, center={pts_centroid.cpu().numpy()}")
+                        print(f"[DEBUG] {axis} {math.degrees(angle):.1f}°: orig_pos={original_cam_pos.cpu().numpy()}, rotated_pos={rotated_cam_pos.cpu().numpy()}, center={pts_centroid.cpu().numpy()}")
 
                         # Build camera-to-world matrix
                         cam2world = torch.eye(4, device=pts_world.device, dtype=pts_world.dtype)
                         cam2world[:3, 0] = right_dir
                         cam2world[:3, 1] = up_dir
-                        cam2world[:3, 2] = -look_dir  # Camera looks down -Z axis
+                        # Model projection assumes camera looks along +Z in camera frame.
+                        cam2world[:3, 2] = look_dir
                         cam2world[:3, 3] = rotated_cam_pos
 
                         # Return world-to-camera matrix
@@ -482,8 +569,8 @@ if __name__ == '__main__':
                         pts_cam2 = pts_cam2[front2]
                         cols2 = cols[front2]
                         z2 = z2[front2]
-                        # Widen FOV significantly for yawed views by reducing focal length
-                        fov_scale = 0.6  # Increased from 0.75 to 0.6 for wider FOV
+                        # Use original FOV scale to preserve apparent size
+                        fov_scale = 1.0
                         fx2 = float(max(H, W)) * fov_scale
                         fy2 = float(max(H, W)) * fov_scale
                         cx2 = float(W) / 2.0
@@ -515,12 +602,40 @@ if __name__ == '__main__':
                         Image.fromarray(img_out2).save(out_path)
                         print(f"Saved rendered image to: {out_path}")
 
-                    # Create right and left camera matrices that look at the centroid
-                    right_world2cam = create_orbital_camera(theta)  # +75° yaw
-                    left_world2cam = create_orbital_camera(-theta)  # -75° yaw
-
-                    render_with_world2cam(right_world2cam, '_right')
-                    render_with_world2cam(left_world2cam, '_left')
+                    # Create 6 rotated views: yaw, pitch, roll (+/-75°)
+                    rotation_angle = math.radians(75.0)
+                    rotations = [
+                        ('yaw', rotation_angle, '_yaw_pos'),
+                        ('yaw', -rotation_angle, '_yaw_neg'),
+                        ('pitch', rotation_angle, '_pitch_pos'),
+                        ('pitch', -rotation_angle, '_pitch_neg'),
+                        ('roll', rotation_angle, '_roll_pos'),
+                        ('roll', -rotation_angle, '_roll_neg'),
+                    ]
+                    for axis, angle, suffix in rotations:
+                        rotated_world2cam = create_rotated_camera(axis, angle)
+                        render_with_world2cam(rotated_world2cam, suffix)
+                    # Compose a 2x3 grid of the six rotated views
+                    try:
+                        base_noext = png_path.rsplit('.', 1)[0]
+                        suffixes = ['_yaw_pos', '_pitch_pos', '_roll_pos', '_yaw_neg', '_pitch_neg', '_roll_neg']
+                        tile_paths = [base_noext + s + '.png' for s in suffixes]
+                        tiles = []
+                        for p in tile_paths:
+                            if osp.isfile(p):
+                                tiles.append(Image.open(p).convert('RGB').resize((W, H), Image.Resampling.NEAREST))
+                            else:
+                                tiles.append(Image.new('RGB', (W, H), (0, 0, 0)))
+                        grid = Image.new('RGB', (W * 3, H * 2))
+                        for idx, tile in enumerate(tiles):
+                            r = idx // 3
+                            c = idx % 3
+                            grid.paste(tile, (c * W, r * H))
+                        grid_path = base_noext + '_grid6.png'
+                        grid.save(grid_path)
+                        print(f"Saved 2x3 grid of six views to: {grid_path}")
+                    except Exception as e_grid:
+                        print(f"[WARN] Failed to compose 2x3 grid: {e_grid}")
                 except Exception as _e:
                     print(f"[WARN] Failed to render yawed views: {_e}")
 

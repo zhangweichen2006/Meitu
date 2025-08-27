@@ -10,6 +10,8 @@ from typing import Sequence, Union
 import numpy as np
 from mmengine.dataset import Compose
 from mmengine.model import BaseModel
+from PIL import Image, ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 ImageType = Union[str, np.ndarray, Sequence[str], Sequence[np.ndarray]]
 
@@ -26,8 +28,13 @@ def _prepare_data(imgs: ImageType, model: BaseModel):
         imgs = [imgs]
         is_batch = False
 
+    # Ensure the first step can handle numpy arrays robustly
     if isinstance(imgs[0], np.ndarray):
         cfg.test_pipeline[0]['type'] = 'LoadImageFromNDArray'
+    else:
+        # Replace basic loader with robust one that can handle truncated JPEGs
+        if cfg.test_pipeline[0].get('type') == 'LoadImageFromFile':
+            cfg.test_pipeline[0]['type'] = 'LoadImage'
 
     # TODO: Consider using the singleton pattern to avoid building
     # a pipeline for each inference
@@ -42,7 +49,15 @@ def _prepare_data(imgs: ImageType, model: BaseModel):
         if isinstance(img, np.ndarray):
             data_ = dict(img=img)
         else:
-            data_ = dict(img_path=img)
+            # Best-effort: try to open truncated/corrupted files via PIL and pass ndarray
+            try:
+                with Image.open(img) as pil_im:
+                    pil_im = pil_im.convert('RGB')
+                    img_array = np.array(pil_im)
+                    data_ = dict(img=img_array)
+            except Exception:
+                data_ = dict(img_path=img)
+
         data_ = pipeline(data_)
 
         if cfg.get('inference_tta_pipeline') is not None:
