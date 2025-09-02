@@ -11,6 +11,8 @@ def make_parser():
         help="Path to input video file.")
     parser.add_argument("--output_folder", type=str,
         help="Path to folder output folder.")
+    parser.add_argument("--output_cam", type=str,
+        help="Path to folder output camera folder.")
     parser.add_argument("--opacity", type=float, default=0.8,
         help="Overlay opacity for meshes in [0,1]; lower = more transparent.")
     parser.add_argument("--same_mesh_color", action="store_true",
@@ -25,11 +27,11 @@ def main():
     args = parser.parse_args()
     estimator = HumanMeshEstimator(mesh_opacity=args.opacity, same_mesh_color=args.same_mesh_color, save_smpl_obj=args.save_smpl_obj)
     if args.video:
-        estimator.run_on_video(args.video, args.output_folder)
+        estimator.run_on_video(args.video, args.output_folder, args.output_cam)
     else:
         if not args.output_folder:
             raise ValueError("--output_folder is required when using --image_folder")
-        estimator.run_on_images(args.image_folder, args.output_folder)
+        estimator.run_on_images(args.image_folder, args.output_folder, args.output_cam)
 
 if __name__=='__main__':
     main()

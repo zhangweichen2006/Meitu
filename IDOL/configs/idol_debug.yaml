@@ -1,0 +1,145 @@
+
+debug: True
+# code_size: [32, 256, 256]
+code_size: [32, 1024, 1024]
+model:
+  # base_learning_rate: 2.0e-04 # yy Need to check
+  target: lib.SapiensGS_SA_v1
+  params:
+   # optimizer add
+    # use_bf16: true
+    max_steps: 100_000
+    warmup_steps: 10_000 #12_000
+    use_checkpoint: true
+    lambda_depth_tv: 0.05 
+    lambda_lpips: 0 #2.0
+    lambda_mse: 20 #1.0
+    lambda_offset: 1 #offset_weight: 50 mse 20, lpips 0.1
+    neck_learning_rate: 5e-4
+    decoder_learning_rate: 5e-4
+
+
+    output_hidden_states: true  # if True, will output the hidden states from sapiens shallow layer, for the neck decoder
+    
+    loss_coef: 0.5 
+    init_iter: 500
+    scale_weight: 0.01
+    smplx_path:  'work_dirs/demo_data/Ways_to_Catch_360_clip1.json'
+   
+    code_reshape:  [32, 96, 96] 
+    patch_size: 1
+    code_activation:
+      type: tanh
+      mean: 0.0
+      std: 0.5
+      clip_range: 2
+    grid_size: 64
+    encoder:
+      target: lib.models.sapiens.SapiensWrapper_ts 
+      params:
+        model_path:   work_dirs/ckpt/sapiens_1b_epoch_173_torchscript.pt2
+        # model_path: /apdcephfs_cq8/share_1367250/harriswen/projects/sapiens_convert/checkpoints//sapiens_1b_epoch_173_torchscript.pt2
+        layer_num: 40
+        img_size: [1024, 736]
+        freeze: True
+    neck:
+      target: lib.models.transformer_sa.neck_SA_v3_skip # TODO!! add a self attention version
+      params:
+        patch_size: 4 #4,
+        in_chans: 32  #32, # the uv code  dims
+        num_patches: 9216 #4096 #num_patches  #,#4096, # 16*16
+        embed_dim: 1536 # sapiens' latent dims # 1920 # 1920 for sapiens encoder2  #1024 # the feature extrators outputs
+        decoder_embed_dim: 128 # 1024
+        decoder_depth: 2 # 8
+        decoder_num_heads: 4 #16,
+        total_num_hidden_states: 12 
+        mlp_ratio: 4.
+    decoder:
+      target:  lib.models.decoders.UVNDecoder_gender 
+      params:
+        interp_mode: bilinear
+        base_layers: [16, 64]
+        density_layers: [64, 1]
+        color_layers: [16, 128, 9]
+        offset_layers: [64, 3]
+        use_dir_enc: false
+        dir_layers: [16, 64]
+        activation: silu
+        bg_color: 1
+        sigma_activation: sigmoid
+        sigmoid_saturation: 0.001
+        gender: neutral
+        is_sub2: true ## update, make it into 10w gs points
+        multires: 0
+        image_size: [640, 896]
+        superres: false
+        focal: 1120
+        up_cnn_in_channels: 128 # be the same as decoder_embed_dim
+        reshape_type: VitHead
+        vithead_param:
+          in_channels: 128 # be the same as decoder_embed_dim
+          out_channels: 32
+          deconv_out_channels: [128, 64]
+          deconv_kernel_sizes: [4, 4]
+          conv_out_channels: [128, 128]
+          conv_kernel_sizes: [3, 3]
+        fix_sigma: true
+
+dataset:
+  target: lib.datasets.dataloader.DataModuleFromConfig
+  params:
+    batch_size: 1 #16 # 6 for lpips
+    num_workers: 1 #2
+    # working when in debug mode
+    debug_cache_path:./processed_data/flux_batch1_5000_test_50_local.npy
+
+    train: 
+      target: lib.datasets.AvatarDataset
+      params:
+        data_prefix: None
+     
+        cache_path:  [
+          ./processed_data/deepfashion_train_140_local.npy,
+          ./processed_data/flux_batch1_5000_train_140_local.npy
+        ]
+
+        specific_observation_num: 5
+        better_range: true
+        first_is_front: true
+        if_include_video_ref_img: true  
+        prob_include_video_ref_img: 0.5
+        img_res: [640, 896]
+    validation:
+      target: lib.datasets.AvatarDataset
+      params:
+        data_prefix: None
+        load_imgs: true
+        specific_observation_num: 3
+        better_range: true
+        first_is_front: true
+        img_res: [640, 896]
+        cache_path:       [
+        ./processed_data/flux_batch1_5000_test_50_local.npy,
+        #./processed_data/flux_batch1_5000_val_10_local.npy
+        ]
+
+
+
+lightning:
+  modelcheckpoint:
+    params:
+      every_n_train_steps:  4000 #2000
+      save_top_k: -1
+      save_last: true
+      monitor: 'train/loss_mse' # ADD this logging in the wrapper_sa
+      mode: "min"
+      filename: 'sample-synData-epoch{epoch:02d}-val_loss{val/loss:.2f}'
+  callbacks: {}
+  trainer:
+    num_sanity_val_steps: 1
+    accumulate_grad_batches: 1
+    gradient_clip_val: 10.0
+    max_steps: 80000
+    check_val_every_n_epoch: 1  ## check validation set every 1 training batches in the current epoch
+    benchmark: true
+    val_check_interval: 1.0

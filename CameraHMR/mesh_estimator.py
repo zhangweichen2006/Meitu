@@ -24,6 +24,19 @@ from core.utils import recursive_to
 from core.utils.geometry import batch_rot2aa
 from core.cam_model.fl_net import FLNet
 from core.constants import IMAGE_SIZE, IMAGE_MEAN, IMAGE_STD, NUM_BETAS
+from core.utils.geometry import rotmat_to_aa  # or batch_rot2aa
+
+# 假设来自 CameraHMR 的输出：
+# global_orient: (B, 1, 3, 3)
+# body_pose:     (B, 23, 3, 3)
+def smpl_rotmat_to_axis_angle(global_orient_mat, body_pose_mat):
+    B = global_orient_mat.shape[0]
+    go_aa = rotmat_to_aa(global_orient_mat.squeeze(1))                  # (B, 3)
+    body_aa = rotmat_to_aa(body_pose_mat.reshape(-1, 3, 3)).reshape(B, 23, 3)  # (B, 23, 3)
+    # 拼成 24*3 的轴角（SMPL）
+    pose_aa = torch.cat([go_aa[:, None, :], body_aa], dim=1)            # (B, 24, 3)
+    pose_aa_flat = pose_aa.reshape(B, 24 * 3)                           # (B, 72)
+    return go_aa, body_aa, pose_aa, pose_aa_flat
 
 def resize_image(img, target_size):
     height, width = img.shape[:2]
@@ -128,8 +141,9 @@ class HumanMeshEstimator:
         smpl.body_pose[0][0][:] = np.zeros(3)
 
 
-    def process_image(self, img_path, output_img_folder, i, no_id=True):
+    def process_image(self, img_path, output_img_folder, output_cam_folder, i, no_id=True):
         img_cv2 = cv2.imread(str(img_path))
+        print(img_path)
         if img_cv2 is None:
             try:
                 # Fallback for formats not handled by OpenCV (e.g., GIF/WEBP)
@@ -151,6 +165,7 @@ class HumanMeshEstimator:
             suffix=f'_{i:06d}'
         overlay_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}{suffix}{img_ext}')
         mesh_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}{suffix}.obj')
+        cam_fname = os.path.join(output_cam_folder, f'{os.path.basename(fname)}{suffix}.json')
 
         # Detect humans in the image
         det_out = self.detector(img_cv2)
@@ -167,7 +182,21 @@ class HumanMeshEstimator:
 
         for batch in dataloader:
             batch = recursive_to(batch, self.device)
-            img_h, img_w = batch['img_size'][0]
+            img_h, img_w = batch['img_size'][0] # resize to 256x256
+            # Ensure Python ints for JSON friendliness
+            try:
+                import torch as _torch
+                if isinstance(img_h, _torch.Tensor):
+                    img_h = int(img_h.detach().cpu().item())
+                else:
+                    img_h = int(img_h)
+                if isinstance(img_w, _torch.Tensor):
+                    img_w = int(img_w.detach().cpu().item())
+                else:
+                    img_w = int(img_w)
+            except Exception:
+                img_h = int(img_h)
+                img_w = int(img_w)
             with torch.no_grad():
                 out_smpl_params, out_cam, focal_length_ = self.model(batch)
 
@@ -190,14 +219,89 @@ class HumanMeshEstimator:
             cv2.imwrite(overlay_fname, final_img_bgr)
             renderer.delete()
 
+            # === Export SMPL-X-like params and camera for IDOL reconstruct (image mode) ===
+            try:
+                os.makedirs(output_cam_folder, exist_ok=True)
 
-    def run_on_images(self, image_folder, out_folder):
+                # Save/copy the input image to IDOL dir with even dims (as JPEG)
+                id_img_path = os.path.join(output_img_folder, f"{os.path.basename(fname)}.jpg")
+                src = img_cv2
+                h, w = src.shape[:2]
+                pad_h = h % 2
+                pad_w = w % 2
+                if pad_h != 0 or pad_w != 0:
+                    src = cv2.copyMakeBorder(src, 0, pad_h, 0, pad_w, cv2.BORDER_REPLICATE)
+                cv2.imwrite(id_img_path, src)
+
+                def tensor_to_list(t, max_len=None):
+                    if t is None:
+                        return None
+                    arr = t.detach().float().cpu().numpy()#.reshape(-1)
+                    if max_len is not None:
+                        arr = arr[:max_len]
+                    return arr.tolist()
+
+                # Convert to JSON-compatible axis-angle and keep first 21 body joints -> 21*3
+                go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
+                    out_smpl_params['global_orient'], out_smpl_params['body_pose']
+                )
+                # body_aa corresponds to SMPL joints 1..23 → take first 21 joints directly
+                body_aa_21 = body_aa[:, :21, :]
+
+                global_orient = tensor_to_list(go_aa.squeeze(0)) or [0.0, 0.0, 0.0]
+                body_pose = tensor_to_list(body_aa_21.squeeze(0)) or [[0.0, 0.0, 0.0] for _ in range(21)] #21*3
+                betas_raw = tensor_to_list(out_smpl_params.get('betas').squeeze(0)) or [0.0] * 10
+                betas_save = (betas_raw + [0.0] * 10)[:10]
+
+                cam_t = tensor_to_list(output_cam_trans[0].squeeze(0)) if isinstance(output_cam_trans, torch.Tensor) else [0.0, 0.0, 2.0]
+                camera_R = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+                camera_t = cam_t[:3] if cam_t is not None else [0.0, 0.0, 2.0]
+                # Ensure Python float (CPU) for JSON
+                if isinstance(focal_length_, torch.Tensor):
+                    f_est = float(focal_length_[0].detach().cpu().item())
+                else:
+                    f_est = float(focal_length_)
+                camera = {
+                    "R": camera_R,
+                    "t": camera_t,
+                    "focal": [f_est, f_est],
+                    "princpt": [img_w / 2.0, img_h / 2.0],
+                }
+
+                zeros_hand = [0.0] * 45
+                zeros3 = [0.0, 0.0, 0.0]
+                zeros_expr10 = [0.0] * 10
+
+                idol_json = {
+                    "camera": camera,
+                    "root_pose": global_orient,
+                    "body_pose": body_pose,
+                    "betas_save": betas_save,
+                    "nlf_smplx_betas": betas_save,
+                    "lhand_pose": zeros_hand,
+                    "rhand_pose": zeros_hand,
+                    "jaw_pose": zeros3,
+                    "leye_pose": zeros3,
+                    "reye_pose": zeros3,
+                    "expr": zeros_expr10,
+                    "trans": [0.0, 0.0, 0.0],
+                }
+
+                id_json_path = os.path.join(output_cam_folder, f"{os.path.basename(fname)}.json")
+                with open(id_json_path, 'w') as f:
+                    json.dump(idol_json, f)
+
+            except Exception as e:
+                print(f"Failed to export IDOL inputs for {fname}: {e}")
+
+
+    def run_on_images(self, image_folder, out_folder, out_cam_folder):
         if not os.path.exists(out_folder):
             os.makedirs(out_folder)
         image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.gif', '*.bmp', '*.tiff', '*.webp']
         images_list = [image for ext in image_extensions for image in glob(os.path.join(image_folder, ext))]
         for ind, img_path in enumerate(images_list):
-            self.process_image(img_path, out_folder, ind)
+            self.process_image(img_path, out_folder, out_cam_folder, ind)
 
     def process_frame(self, frame_bgr, output_img_folder, frame_index):
         img_cv2 = frame_bgr
@@ -238,6 +342,84 @@ class HumanMeshEstimator:
             final_img_bgr = cv2.cvtColor(front_view_rgb.astype(np.uint8), cv2.COLOR_RGB2BGR)
             cv2.imwrite(overlay_fname, final_img_bgr)
             renderer.delete()
+
+            # === Export SMPL-X-like params and camera for IDOL reconstruct ===
+            try:
+                idol_root = "/home/cevin/Meitu/IDOL"
+                idol_img_dir = os.path.join(idol_root, "test_data_img", "all")
+                os.makedirs(idol_img_dir, exist_ok=True)
+
+                # Save the raw frame for IDOL input (even-sized JPEG)
+                id_img_path = os.path.join(idol_img_dir, f"{fname}.jpg")
+                # pad to even dims to be safe for downstream video encoding later
+                h, w = img_cv2.shape[:2]
+                pad_h = h % 2
+                pad_w = w % 2
+                if pad_h != 0 or pad_w != 0:
+                    img_to_save = cv2.copyMakeBorder(img_cv2, 0, pad_h, 0, pad_w, cv2.BORDER_REPLICATE)
+                else:
+                    img_to_save = img_cv2
+                cv2.imwrite(id_img_path, img_to_save)
+
+                # Build SMPL/SMPL-X parameter JSON expected by IDOL's load_smplify_json
+                # Extract first item in batch
+                def tensor_to_list(t, max_len=None):
+                    if t is None:
+                        return None
+                    arr = t.detach().float().cpu().numpy().reshape(-1)
+                    if max_len is not None:
+                        arr = arr[:max_len]
+                    return arr.tolist()
+
+                # Convert to JSON-compatible axis-angle and keep first 21 body joints -> 21*3
+                go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
+                    out_smpl_params['global_orient'], out_smpl_params['body_pose']
+                )
+                # body_aa corresponds to SMPL joints 1..23 → take first 21 joints directly
+                body_aa_21 = body_aa[:, :21, :]
+                global_orient = tensor_to_list(go_aa) or [0.0, 0.0, 0.0]
+                body_pose = tensor_to_list(body_aa_21.reshape(-1)) or [0.0] * 63
+                betas_raw = tensor_to_list(out_smpl_params.get('betas')) or [0.0] * 10
+                betas_save = (betas_raw + [0.0] * 10)[:10]
+
+                # Camera extrinsics: use identity R and translation from our conversion
+                cam_t = tensor_to_list(output_cam_trans[0]) if isinstance(output_cam_trans, torch.Tensor) else [0.0, 0.0, 2.0]
+                camera_R = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+                camera_t = cam_t[:3] if cam_t is not None else [0.0, 0.0, 2.0]
+                # Intrinsics from estimated focal and image center
+                f_est = float(focal_length_[0]) if isinstance(focal_length_, torch.Tensor) else float(focal_length_)
+                camera = {
+                    "R": camera_R,
+                    "t": camera_t,
+                    "focal": [f_est, f_est],
+                    "princpt": [img_w / 2.0, img_h / 2.0],
+                }
+
+                # Fill remaining SMPL-X fields with zeros
+                zeros_hand = [0.0] * 45
+                zeros3 = [0.0, 0.0, 0.0]
+                zeros_expr10 = [0.0] * 10
+
+                idol_json = {
+                    "camera": camera,
+                    "root_pose": global_orient,
+                    "body_pose": body_pose,
+                    "betas_save": betas_save,
+                    "lhand_pose": zeros_hand,
+                    "rhand_pose": zeros_hand,
+                    "jaw_pose": zeros3,
+                    "leye_pose": zeros3,
+                    "reye_pose": zeros3,
+                    "expr": zeros_expr10,
+                    "trans": [0.0, 0.0, 0.0],
+                }
+
+                id_json_path = os.path.join(idol_img_dir, f"{fname}.json")
+                with open(id_json_path, 'w') as f:
+                    json.dump(idol_json, f)
+
+            except Exception as e:
+                print(f"Failed to export IDOL inputs for {fname}: {e}")
 
     def _export_video_from_frames(self, frames_dir, video_out_path, fps):
         pattern = os.path.join(frames_dir, 'frame_%06d.png')

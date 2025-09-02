@@ -1,0 +1,51 @@
+
+dataset:
+  target: lib.datasets.dataloader.DataModuleFromConfig
+  params:
+    batch_size: 1 
+    num_workers: 2 
+    # working when in debug mode
+    debug_cache_path:  ./processed_data/flux_batch1_5000_test_50_local.npy
+
+    train: 
+      target: lib.datasets.AvatarDataset
+      params:
+        data_prefix: None
+     
+        cache_path:  [
+          ./processed_data/deepfashion_train_140_local.npy,
+          ./processed_data/flux_batch1_5000_train_140_local.npy
+        ]
+
+        specific_observation_num: 5
+        better_range: true
+        first_is_front: true
+        if_include_video_ref_img: true
+        prob_include_video_ref_img: 0.5                                                                                                                          
+        img_res: [640, 896]
+    validation:
+      target: lib.datasets.AvatarDataset
+      params:
+        data_prefix: None
+        load_imgs: true
+        specific_observation_num: 5
+        better_range: true
+        first_is_front: true
+        img_res: [640, 896]
+        cache_path:  [
+          ./processed_data/deepfashion_val_10_local.npy,
+          ./processed_data/flux_batch1_5000_val_10_local.npy
+        ]
+    test:
+      target: lib.datasets.AvatarDataset
+      params:
+        data_prefix: None
+        load_imgs: true
+        specific_observation_num: 5
+        better_range: true
+        first_is_front: true
+        img_res: [640, 896]
+        cache_path:  [
+          ./processed_data/deepfashion_test_50_local.npy,
+          ./processed_data/flux_batch1_5000_test_50_local.npy
+        ]

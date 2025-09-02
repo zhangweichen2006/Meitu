@@ -63,7 +63,7 @@ class SMPLTransformerDecoderHead(nn.Module):
         token_out = self.transformer(token, context=x)
         token_out = token_out.squeeze(1) # (B, C)
         # Readout from token_out
-        pred_body_pose = self.decpose(token_out) + pred_body_pose
+        pred_body_pose = self.decpose(token_out) + pred_body_pose # 1* 144 (6D*24)
         pred_betas = self.decshape(token_out) + pred_betas
         pred_cam = self.deccam(token_out) + pred_cam
         pred_kp = self.deckp(token_out)
@@ -75,12 +75,12 @@ class SMPLTransformerDecoderHead(nn.Module):
 
         pred_smpl_params_list = {}
 
-        pred_smpl_params_list['body_pose'] = torch.cat([joint_conversion_fn(pbp).view(batch_size, -1, 3, 3)[:, 1:, :, :] for pbp in pred_body_pose_list], dim=0)
-        pred_smpl_params_list['betas'] = torch.cat(pred_betas_list, dim=0)
-        pred_smpl_params_list['cam'] = torch.cat(pred_cam_list, dim=0)
-        pred_body_pose = joint_conversion_fn(pred_body_pose).view(batch_size, 24, 3, 3)
+        pred_smpl_params_list['body_pose'] = torch.cat([joint_conversion_fn(pbp).view(batch_size, -1, 3, 3)[:, 1:, :, :] for pbp in pred_body_pose_list], dim=0) # 1*23*3*3, remove root
+        pred_smpl_params_list['betas'] = torch.cat(pred_betas_list, dim=0) # 1*10
+        pred_smpl_params_list['cam'] = torch.cat(pred_cam_list, dim=0) # 1*3
+        pred_body_pose = joint_conversion_fn(pred_body_pose).view(batch_size, 24, 3, 3) # 1*24*3*3
 
-        pred_smpl_params = {'global_orient': pred_body_pose[:, [0]],
-                            'body_pose': pred_body_pose[:, 1:],
+        pred_smpl_params = {'global_orient': pred_body_pose[:, [0]], #root
+                            'body_pose': pred_body_pose[:, 1:], # 23 joints
                             'betas': pred_betas}
         return pred_smpl_params, pred_cam, pred_smpl_params_list, pred_kp

@@ -1,0 +1,39 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Project specific
+work_dirs/
+test/
+lib/models/deformers/smplx/SMPLX/*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+
+# Git related
+*.orig
+*.rej
+*.patch
+
+*.zip
+*.npz
+*.pkl
+*.png
+*.jpg
+*.jpeg
+*.mp4
+test_data_img

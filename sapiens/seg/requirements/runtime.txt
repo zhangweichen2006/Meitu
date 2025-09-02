@@ -3,3 +3,4 @@ numpy
 packaging
 prettytable
 scipy
+faiss-gpu
