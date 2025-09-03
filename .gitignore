@@ -12,3 +12,6 @@ data
 *.pth.gz.part
 *.npz
 *.npy
+*.mp4
+*.heic
+*.HEIC
