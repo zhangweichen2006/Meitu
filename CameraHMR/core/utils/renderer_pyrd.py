@@ -79,7 +79,7 @@ class Renderer(object):
             output_img = (
                 color_rgb[:, :, :3] * valid_mask * visible_weight
                 + bg_img_rgb * (1-valid_mask) +
-                + (valid_mask) * bg_img_rgb * (1-visible_weight)
+                (valid_mask) * bg_img_rgb * (1-visible_weight)
             )
             return output_img
 
