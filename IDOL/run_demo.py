@@ -281,11 +281,12 @@ def main():
     test_dir = args.input_path
     img_exts = ['*.jpg', '*.jpeg', '*.png', '*.bmp']
     img_paths_list = []
-    for ext in img_exts:
-        img_paths_list.extend(sorted(glob.glob(os.path.join(test_dir, ext))))
+    if test_dir and os.path.exists(test_dir) and len(os.listdir(test_dir)) > 0:
+        for ext in img_exts:
+            img_paths_list.extend(sorted(glob.glob(os.path.join(test_dir, ext))))
     # Fallback to demo image if no images found
     if len(img_paths_list) == 0:
-        img_paths_list = ['work_dirs/demo_data/4.jpg']
+        img_paths_list = ['work_dirs/demo_data/13.jpg']
     # For each image, try to find a same-stem JSON next to it; else None
     smplx_ref_path_list = []
     for p in img_paths_list:

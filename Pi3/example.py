@@ -9,6 +9,10 @@ from pi3.utils.geometry import depth_edge
 from pi3.models.pi3 import Pi3
 import numpy as np
 from PIL import Image
+import pillow_heif
+
+# Register HEIF/HEIC opener so PIL can read iPhone photos
+pillow_heif.register_heif_opener()
 
 def render_with_world2cam_suffix(world2cam_mat: torch.Tensor, out_folder: str, suffix: str, pts_world: torch.Tensor, cols: torch.Tensor, H: int, W: int):
     if pts_world.numel() == 0:
