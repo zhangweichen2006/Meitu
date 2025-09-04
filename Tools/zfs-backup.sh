@@ -9,6 +9,12 @@ BACKUP_POOL="backup"
 DATE=$(date +%Y%m%d)
 TAG="daily-${DATE}"
 
+# check if the backup pool is available
+if ! zpool list -H -o name 2>/dev/null | grep -qx "$BACKUP_POOL"; then
+  echo "Backup pool $BACKUP_POOL is not available; exiting."
+  exit 0
+fi
+
 # --- Pools to protect (explicit includes) ---
 # Include rpool, data, and bpool; exclude BACKUP_POOL only.
 CANDIDATE_POOLS=("rpool" "data" "bpool")
