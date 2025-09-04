@@ -165,7 +165,8 @@ class HumanMeshEstimator:
             suffix=f'_{i:06d}'
         overlay_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}{suffix}{img_ext}')
         mesh_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}{suffix}.obj')
-        cam_fname = os.path.join(output_cam_folder, f'{os.path.basename(fname)}{suffix}.json')
+        if output_cam_folder:
+            cam_fname = os.path.join(output_cam_folder, f'{os.path.basename(fname)}{suffix}.json')
 
         # Detect humans in the image
         det_out = self.detector(img_cv2)
@@ -292,7 +293,7 @@ class HumanMeshEstimator:
                     json.dump(idol_json, f)
 
             except Exception as e:
-                print(f"Failed to export IDOL inputs for {fname}: {e}")
+                print(f"Failed to export Camera info for IDOL inputs {fname}: {e}")
 
 
     def run_on_images(self, image_folder, out_folder, out_cam_folder):
