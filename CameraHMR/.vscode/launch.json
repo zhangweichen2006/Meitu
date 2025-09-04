@@ -13,11 +13,15 @@
             "env": {
                 "CUDA_VISIBLE_DEVICES": "1"
             },
-            "args": ["--image_folder", "demo_images", "--output_folder", "outputs"]
+            "args": []
         }
     ]
 }
+// "--image_folder", "demo_images", "--output_folder", "outputs"
+// "--image_folder", "/home/cevin/Meitu/IDOL/test_data_img/all", "--output_folder", "/home/cevin/Meitu/IDOL/test_data_img/out", "--output_cam", "/home/cevin/Meitu/IDOL/test_data_img/out_smpl", "--use_smplify"
 // python train.py data=train experiment=camerahmr exp_name=train_run1
 // python demo.py --image_folder /home/cevin/Meitu/IDOL/test_data_img/all --output_folder /home/cevin/Meitu/IDOL/test_data_img/out --output_cam /home/cevin/Meitu/IDOL/test_data_img/out_smpl
 
-// "--image_folder", "/home/cevin/Meitu/IDOL/test_data_img/all", "--output_folder", "/home/cevin/Meitu/IDOL/test_data_img/out", "--output_cam", "/home/cevin/Meitu/IDOL/test_data_img/out_smpl"
+// "--image_folder", "/home/cevin/Meitu/IDOL/test_data_img/all", "--output_folder", "/home/cevin/Meitu/IDOL/test_data_img/out", "--output_cam", "/home/cevin/Meitu/IDOL/test_data_img/out_smpl", "--use_smplify"
+
+// ["data=train", "experiment=camerahmr", "exp_name=train_run1"] "--vis", "True"

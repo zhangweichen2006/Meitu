@@ -19,13 +19,18 @@ def make_parser():
         help="Use same color for all people instead of per-person hues.")
     parser.add_argument("--save_smpl_obj", action="store_true",
         help="Only output the image with the mesh overlayed on top.")
+    parser.add_argument("--use_smplify", action="store_true",
+        help="Enable CamSMPLify refinement using 2D dense keypoints and intrinsics.")
     return parser
 
 def main():
 
     parser = make_parser()
     args = parser.parse_args()
-    estimator = HumanMeshEstimator(mesh_opacity=args.opacity, same_mesh_color=args.same_mesh_color, save_smpl_obj=args.save_smpl_obj)
+    estimator = HumanMeshEstimator(mesh_opacity=args.opacity,
+                                   same_mesh_color=args.same_mesh_color,
+                                   save_smpl_obj=args.save_smpl_obj,
+                                   use_smplify=args.use_smplify)
     if args.video:
         estimator.run_on_video(args.video, args.output_folder, args.output_cam)
     else:
@@ -35,4 +40,3 @@ def main():
 
 if __name__=='__main__':
     main()
-

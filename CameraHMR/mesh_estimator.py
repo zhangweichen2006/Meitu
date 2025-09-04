@@ -23,8 +23,10 @@ from core.utils.renderer_pyrd import Renderer
 from core.utils import recursive_to
 from core.utils.geometry import batch_rot2aa
 from core.cam_model.fl_net import FLNet
-from core.constants import IMAGE_SIZE, IMAGE_MEAN, IMAGE_STD, NUM_BETAS
+from core.constants import IMAGE_SIZE, IMAGE_MEAN, IMAGE_STD, NUM_BETAS, DENSEKP_CKPT
 from core.utils.geometry import rotmat_to_aa  # or batch_rot2aa
+from core.utils.geometry import aa_to_rotmat
+from types import SimpleNamespace
 
 # 假设来自 CameraHMR 的输出：
 # global_orient: (B, 1, 3, 3)
@@ -64,7 +66,7 @@ def resize_image(img, target_size):
     return aspect_ratio, final_img
 
 class HumanMeshEstimator:
-    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False):
+    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False, use_smplify=False):
         self.device = (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
         self.model = self.init_model()
         self.detector = self.init_detector(threshold)
@@ -74,6 +76,31 @@ class HumanMeshEstimator:
         self.mesh_opacity = mesh_opacity
         self.same_mesh_color = same_mesh_color
         self.save_smpl_obj = save_smpl_obj
+        self.use_smplify = use_smplify
+        self.smplify = None
+        self.smplify_args = None
+        self.densekp_model = None
+
+        if self.use_smplify:
+            try:
+                # Lazy import to avoid heavy deps if not requested
+                from CamSMPLify.cam_smplify import SMPLify
+                from CamSMPLify.constants import LOSS_CUT, LOW_THRESHOLD, HIGH_THRESHOLD
+                from core.densekp_trainer import DenseKP
+                # Initialize SMPLify
+                self.smplify = SMPLify(vis=False, verbose=False, device=self.device)
+                self.smplify_args = SimpleNamespace(
+                    loss_cut=LOSS_CUT,
+                    high_threshold=HIGH_THRESHOLD,
+                    low_threshold=LOW_THRESHOLD,
+                    vis_int=100,
+                )
+                # Load DenseKP for dense 2D keypoints required by SMPLify
+                self.densekp_model = DenseKP.load_from_checkpoint(DENSEKP_CKPT, strict=False).to(self.device)
+                self.densekp_model.eval()
+            except Exception as e:
+                print(f"Failed to initialize CamSMPLify / DenseKP; continuing without refinement: {e}")
+                self.use_smplify = False
 
     def init_cam_model(self):
         model = FLNet()
@@ -203,6 +230,60 @@ class HumanMeshEstimator:
 
             output_vertices, output_joints, output_cam_trans = self.get_output_mesh(out_smpl_params, out_cam, batch)
 
+            # Optional CamSMPLify refinement per detected person
+            if self.use_smplify and self.smplify is not None and self.densekp_model is not None:
+                try:
+                    with torch.no_grad():
+                        dk_out = self.densekp_model(batch)
+                        dense_kp_batch = dk_out['pred_keypoints']  # (B, K, 3), normalized ~[-0.5,0.5]
+
+                    # Convert initial rotmats to axis-angle for SMPLify init
+                    go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
+                        out_smpl_params['global_orient'], out_smpl_params['body_pose']
+                    )
+
+                    B = pose_aa_flat.shape[0]
+                    refined_vertices = output_vertices.clone()
+                    refined_cam_t = output_cam_trans.clone()
+
+                    for bi in range(B):
+                        try:
+                            init_pose_flat = pose_aa_flat[bi].detach().cpu().numpy()[None, :]
+                            init_betas = out_smpl_params['betas'][bi].detach().cpu().numpy()[None, :]
+                            cam_t_init = refined_cam_t[bi].detach().cpu().numpy()
+                            center = batch['box_center'][bi].detach().cpu().numpy()
+                            scale = (batch['box_size'][bi].detach().cpu().item() / 200.0)
+                            cam_int = batch['cam_int'][bi].detach().cpu().numpy()
+                            imgname = batch['imgname'][bi] if isinstance(batch['imgname'], (list, tuple)) else batch['imgname']
+                            dense_kp = dense_kp_batch[bi].detach().cpu().numpy()
+
+                            result = self.smplify(self.smplify_args, init_pose_flat, init_betas, cam_t_init,
+                                                   center, scale, cam_int, imgname,
+                                                   joints_2d_=None, dense_kp=dense_kp, ind=bi)
+                            if isinstance(result, dict) and result:
+                                # Build refined SMPL parameter dict for our SMPL layer
+                                go_aa_ref = result['global_orient'].detach().view(1, 1, 3)
+                                body_aa_ref = result['pose'].detach().view(1, 23, 3)
+                                go_mat_ref = aa_to_rotmat(go_aa_ref.view(1, 3)).view(1, 1, 3, 3)
+                                body_mat_ref = aa_to_rotmat(body_aa_ref.view(23, 3)).view(1, 23, 3, 3)
+                                betas_ref = result['betas'].detach().view(1, -1)
+
+                                params_refined = {
+                                    'global_orient': go_mat_ref.to(self.device).float(),
+                                    'body_pose': body_mat_ref.to(self.device).float(),
+                                    'betas': betas_ref.to(self.device).float(),
+                                }
+                                smpl_out_ref = self.smpl_model(**params_refined)
+                                refined_vertices[bi] = smpl_out_ref.vertices[0]
+                                refined_cam_t[bi] = result['camera_translation'].detach().to(self.device)
+                        except Exception as e:
+                            print(f"CamSMPLify refinement failed for person {bi}: {e}")
+
+                    output_vertices = refined_vertices
+                    output_cam_trans = refined_cam_t
+                except Exception as e:
+                    print(f"CamSMPLify pipeline failed; rendering initial predictions. Error: {e}")
+
             if self.save_smpl_obj:
                 mesh = trimesh.Trimesh(output_vertices[0].cpu().numpy() , self.smpl_model.faces,
                                 process=False)
@@ -329,6 +410,58 @@ class HumanMeshEstimator:
                 out_smpl_params, out_cam, focal_length_ = self.model(batch)
 
             output_vertices, output_joints, output_cam_trans = self.get_output_mesh(out_smpl_params, out_cam, batch)
+
+            # Optional CamSMPLify refinement for video frames as well
+            if self.use_smplify and self.smplify is not None and self.densekp_model is not None:
+                try:
+                    with torch.no_grad():
+                        dk_out = self.densekp_model(batch)
+                        dense_kp_batch = dk_out['pred_keypoints']
+
+                    go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
+                        out_smpl_params['global_orient'], out_smpl_params['body_pose']
+                    )
+
+                    B = pose_aa_flat.shape[0]
+                    refined_vertices = output_vertices.clone()
+                    refined_cam_t = output_cam_trans.clone()
+
+                    for bi in range(B):
+                        try:
+                            init_pose_flat = pose_aa_flat[bi].detach().cpu().numpy()[None, :]
+                            init_betas = out_smpl_params['betas'][bi].detach().cpu().numpy()[None, :]
+                            cam_t_init = refined_cam_t[bi].detach().cpu().numpy()
+                            center = batch['box_center'][bi].detach().cpu().numpy()
+                            scale = (batch['box_size'][bi].detach().cpu().item() / 200.0)
+                            cam_int = batch['cam_int'][bi].detach().cpu().numpy()
+                            imgname = f"frame_{frame_index}"
+                            dense_kp = dense_kp_batch[bi].detach().cpu().numpy()
+
+                            result = self.smplify(self.smplify_args, init_pose_flat, init_betas, cam_t_init,
+                                                   center, scale, cam_int, imgname,
+                                                   joints_2d_=None, dense_kp=dense_kp, ind=bi)
+                            if isinstance(result, dict) and result:
+                                go_aa_ref = result['global_orient'].detach().view(1, 1, 3)
+                                body_aa_ref = result['pose'].detach().view(1, 23, 3)
+                                go_mat_ref = aa_to_rotmat(go_aa_ref.view(1, 3)).view(1, 1, 3, 3)
+                                body_mat_ref = aa_to_rotmat(body_aa_ref.view(23, 3)).view(1, 23, 3, 3)
+                                betas_ref = result['betas'].detach().view(1, -1)
+
+                                params_refined = {
+                                    'global_orient': go_mat_ref.to(self.device).float(),
+                                    'body_pose': body_mat_ref.to(self.device).float(),
+                                    'betas': betas_ref.to(self.device).float(),
+                                }
+                                smpl_out_ref = self.smpl_model(**params_refined)
+                                refined_vertices[bi] = smpl_out_ref.vertices[0]
+                                refined_cam_t[bi] = result['camera_translation'].detach().to(self.device)
+                        except Exception as e:
+                            print(f"CamSMPLify refinement (video) failed for person {bi}: {e}")
+
+                    output_vertices = refined_vertices
+                    output_cam_trans = refined_cam_t
+                except Exception as e:
+                    print(f"CamSMPLify pipeline (video) failed; using initial predictions. Error: {e}")
 
             if self.save_smpl_obj:
                 mesh = trimesh.Trimesh(output_vertices[0].cpu().numpy() , self.smpl_model.faces,
