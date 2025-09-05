@@ -1,14 +1,16 @@
 pytorch-lightning
 smplx
-pyrender
-opencv-python
-yacs
+pyrender==0.1.45
+opencv-python==4.10.0.84
+opencv-python-headless
+yacs==0.1.8
 scikit-image
-einops
+# ==0.21.0
+einops==0.8.0
 timm
 pandas
 loguru
-numpy
+numpy==1.23.5
 pyrootutils
 rich
 hydra-colorlog

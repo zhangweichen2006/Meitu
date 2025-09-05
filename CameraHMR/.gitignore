@@ -9,3 +9,6 @@
 *.zip
 output*
 demo*
+out_camsmplify*
+core.*
+*sapiens/.conda*

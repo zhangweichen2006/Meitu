@@ -138,7 +138,7 @@ def render_overlay_image(
     output_img = (
         color[:, :, :3] * valid_mask * visible_weight
         + image * (1-valid_mask) +
-        + (valid_mask) * image * (1-visible_weight)
+        (valid_mask) * image * (1-visible_weight)
     )
     # output_img = (color[:, :, :3] * valid_mask +
     #               (1 - valid_mask) * image)
@@ -278,7 +278,7 @@ def render_image_group(
     )
 
     # input image to this step should be between [0,1]
-    
+
     non_overlay_img = render_nonoverlay_image(
         image=image,
         camera_translation=np.array([0,0,6.]),

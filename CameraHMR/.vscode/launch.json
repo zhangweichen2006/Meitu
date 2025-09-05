@@ -13,7 +13,7 @@
             "env": {
                 "CUDA_VISIBLE_DEVICES": "1"
             },
-            "args": []
+            "args": ["--vis", "True", "--save_vis_dir", "out_camsmplify"]
         }
     ]
 }

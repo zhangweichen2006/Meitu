@@ -44,7 +44,7 @@ def perspective_projection(points, translation, cam_intrinsics):
 
     K = cam_intrinsics
     points_translated = points + translation.unsqueeze(0)
-    projected_points = points_translated / points_translated[:, -1].unsqueeze(-1)  
+    projected_points = points_translated / points_translated[:, -1].unsqueeze(-1)
     projected_points = torch.einsum('ij,kj->ki', K, projected_points.float())
     return projected_points
 
@@ -53,7 +53,7 @@ class SMPLify:
     """Implementation of single-stage SMPLify."""
 
     def __init__(self, step_size=1e-3, batch_size=1, num_iters=5000, focal_length=5000,
-                 device=torch.device('cuda'), vis=False, verbose=False, save_path=None):
+                 device=torch.device('cuda'), vis=False, verbose=False, save_path=None, save_vis_dir=None):
         self.device = device or torch.device("cpu")
         self.focal_length = focal_length
         self.step_size = step_size
@@ -64,10 +64,11 @@ class SMPLify:
         self.smpl = SMPL(SMPL_MODEL_DIR).to(self.device)
         self.vis = vis
         self.save_path = save_path
+        self.save_vis_dir = save_vis_dir
         self.downsample_mat = pickle.load(open(DOWNSAMPLE_MAT, 'rb')).to_dense().cuda()
 
-            
-    def visualize_result(self, image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int):
+
+    def visualize_result(self, image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, step_tag="init"):
         vertices3d = smpl_output.vertices
         img_h, img_w, _ = image_full.shape
 
@@ -85,14 +86,17 @@ class SMPLify:
         render_img = np.clip(render_img * 255, 0, 255).astype(np.uint8)
 
         non_overlay_img = np.clip(non_overlay_img * 255, 0, 255).astype(np.uint8)
-        
+
         combined_img = np.concatenate([render_img, non_overlay_img], axis=1)
 
-        # Display instructions in the console
-        print("[INFO] Press any key to continue fitting")
-
-        cv2.imshow("Visualization", combined_img)
-        pressed_key = cv2.waitKey()
+        if self.save_vis_dir is not None:
+            os.makedirs(self.save_vis_dir, exist_ok=True)
+            out_path = os.path.join(self.save_vis_dir, f"vis_{step_tag}.png")
+            cv2.imwrite(out_path, combined_img[:, :, ::-1])
+        elif self.vis:
+            print("[INFO] Press any key to continue fitting")
+            cv2.imshow("Visualization", combined_img)
+            pressed_key = cv2.waitKey()
 
 
     def __call__(self, args, init_pose, init_betas, cam_t, bbox_center, bbox_scale, cam_int, imgname, joints_2d_=None,
@@ -150,7 +154,7 @@ class SMPLify:
                 model_joints, model_verts = smpl_output.joints, smpl_output.vertices
                 model_verts_sampled = self.downsample_mat.matmul(model_verts)
 
-                loss, _ = body_fitting_loss_dense( 
+                loss, _ = body_fitting_loss_dense(
                     init_pose_, init_global_orient_, init_betas_, body_pose, global_orient, betas,
                     model_joints, model_joints_init, model_verts_init, model_verts, model_verts_sampled,
                     camera_translation, bbox_center, bbox_scale, cam_int, joints_2d, joints_conf, dense_kp,
@@ -158,9 +162,9 @@ class SMPLify:
                     pose_prior_weight=pose_prior_weight,
                     beta_prior_weight=beta_prior_weight
                 )
-                
+
                 if prev_loss == float('inf'):
-                    # Note that these threshold are manually chosen after going through many samples. 
+                    # Note that these threshold are manually chosen after going through many samples.
                     # If the losses changed the threshold has to be adjusted accordingly.
                     if loss.item()>args.loss_cut:
                         self.threshold = args.high_threshold
@@ -170,22 +174,22 @@ class SMPLify:
                 loss.backward()
                 optimizer.step()
 
-                if i % args.vis_int == 0 and self.vis:
-                    return_val = self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int)
-          
+                if i % args.vis_int == 0 and (self.vis or self.save_vis_dir is not None):
+                    self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, step_tag=f"iter_{i}")
+
             return loss
-        
+
         # Phase 1 Optimization
 
         prev_loss = float('inf')
         camera_translation.requires_grad = True
         betas.requires_grad = True
-        
+
         body_optimizer = torch.optim.Adam([camera_translation, betas], lr=self.step_size, betas=(0.9, 0.999))
         pose_prior_weight, beta_prior_weight = 0.0, 0.0
 
         loss = run_optimization(body_optimizer, 300, pose_prior_weight, beta_prior_weight)
-       
+
         smpl_output = self.smpl(global_orient=global_orient, body_pose=body_pose, betas=betas)
         model_joints_init, model_verts_init = smpl_output.joints.detach(), smpl_output.vertices.detach()
 
@@ -193,15 +197,15 @@ class SMPLify:
         global_orient.requires_grad = True
         camera_translation.requires_grad = True
         betas.requires_grad = True
-        
+
         body_optimizer = torch.optim.Adam([global_orient, camera_translation, betas], lr=self.step_size, betas=(0.9, 0.999))
         pose_prior_weight, beta_prior_weight = 0.0, 0.01
 
         loss = run_optimization(body_optimizer, 300, pose_prior_weight, beta_prior_weight)
-       
+
         smpl_output = self.smpl(global_orient=global_orient, body_pose=body_pose, betas=betas)
         model_joints_init, model_verts_init = smpl_output.joints.detach(), smpl_output.vertices.detach()
-         
+
 
         # Phase 3 Optimization
         init_global_orient_ = global_orient.detach().clone()
@@ -209,11 +213,11 @@ class SMPLify:
         body_pose.requires_grad = True
         body_optimizer = torch.optim.Adam([body_pose, global_orient, camera_translation, betas], lr=self.step_size, betas=(0.9, 0.999))
         pose_prior_weight, beta_prior_weight = 1.0, 10.0
-        
+
         loss = run_optimization(body_optimizer, 500, pose_prior_weight, beta_prior_weight)
-        
+
         print('Final loss {:.4f}, Threshold cut {:.4f}'.format(loss.item(), self.threshold))
-        
+
         return {
             'pose': body_pose,
             'global_orient': global_orient,

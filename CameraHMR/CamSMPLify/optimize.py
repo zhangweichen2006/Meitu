@@ -7,12 +7,12 @@ from cam_smplify import SMPLify
 def main(args):
 
     init_param_file = args.input
-    image_base_dir = args.image_dir    
+    image_base_dir = args.image_dir
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
     output_file_path =  os.path.join(args.output_dir, "output.npz")
 
-    smplify = SMPLify(vis=args.vis, verbose=args.verbose)
+    smplify = SMPLify(vis=args.vis, verbose=args.verbose, save_vis_dir=args.save_vis_dir)
     coco_data = np.load(init_param_file, allow_pickle=True)
 
     processed_data = {key: [] for key in coco_data}
@@ -60,6 +60,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default='out_params', help="Directory to save output data")
     parser.add_argument("--image_dir", type=str, default='data/demo_files_for_optimization/demo_images', help="Path to the image dataset directory")
     parser.add_argument("--vis", type=bool, required=False, help="Visualization of fitting")
+    parser.add_argument("--save_vis_dir", type=str, default=None, help="Directory to save headless visualizations")
     parser.add_argument("--verbose", type=bool, required=False, help="Print losses")
     parser.add_argument("--vis_int", type=int, default=100, required=False, help="Visualize result after every 100 iteration of optimization")
     parser.add_argument("--loss_cut", type=int, default=100, required=False, help="If initial loss is more than 100 we use high loss threshold else low loss threshold")
