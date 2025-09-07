@@ -13,10 +13,14 @@
             "env": {
                 "CUDA_VISIBLE_DEVICES": "1"
             },
-            "args": ["--vis", "True", "--save_vis_dir", "out_camsmplify"]
+            "args": ["--image_folder", "data/demo_files_for_optimization/demo_images", "--output_folder", "out_demo_opt"]
         }
     ]
 }
+
+// "args": ["--image_folder", "data/demo_files_for_optimization/demo_images", "--output_folder", "out_demo_opt"]
+// --image_folder data/demo_files_for_optimization/demo_images --output_folder out_camsmplify --npz_path data/demo_files_for_optimization/init_params/filtered_aic.npz
+// "args": ["--vis", "True", "--save_vis_dir", "out_camsmplify"]
 // "--image_folder", "demo_images", "--output_folder", "outputs"
 // "--image_folder", "/home/cevin/Meitu/IDOL/test_data_img/all", "--output_folder", "/home/cevin/Meitu/IDOL/test_data_img/out", "--output_cam", "/home/cevin/Meitu/IDOL/test_data_img/out_smpl", "--use_smplify"
 // python train.py data=train experiment=camerahmr exp_name=train_run1

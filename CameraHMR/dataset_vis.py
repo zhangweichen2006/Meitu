@@ -32,7 +32,7 @@ def load_smpl_model(model_folder, gender="neutral", num_betas=10):
 
 
 def load_data(npz_path, image_folder, ind):
-    data = np.load(npz_path)
+    data = np.load(npz_path, allow_pickle=True)
     img_path = os.path.join(image_folder, data['imgname'][ind].replace('aic-train', 'aic-train-vitpose'))
     return {
         "img_path": img_path,

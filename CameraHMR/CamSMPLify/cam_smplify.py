@@ -144,8 +144,6 @@ class SMPLify:
             draw_add = torch.zeros((joints_2d.shape[0],1))
             image_full = read_img(imgname)
             image_full = image_full[:, :, ::-1]
-            img_h, img_w, _ = image_full.shape
-            return_val = self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int)
 
         def run_optimization(optimizer, num_iters, pose_prior_weight, beta_prior_weight):
             nonlocal prev_loss
@@ -217,6 +215,11 @@ class SMPLify:
         loss = run_optimization(body_optimizer, 500, pose_prior_weight, beta_prior_weight)
 
         print('Final loss {:.4f}, Threshold cut {:.4f}'.format(loss.item(), self.threshold))
+
+        if self.vis:
+            img_h, img_w, _ = image_full.shape
+            smpl_output = self.smpl(global_orient=global_orient, body_pose=body_pose, betas=betas)
+            return_val = self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int)
 
         return {
             'pose': body_pose,

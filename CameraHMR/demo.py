@@ -13,7 +13,7 @@ def make_parser():
         help="Path to folder output folder.")
     parser.add_argument("--output_cam", type=str,
         help="Path to folder output camera folder.")
-    parser.add_argument("--opacity", type=float, default=0.8,
+    parser.add_argument("--opacity", type=float, default=0.5,
         help="Overlay opacity for meshes in [0,1]; lower = more transparent.")
     parser.add_argument("--same_mesh_color", action="store_true",
         help="Use same color for all people instead of per-person hues.")
