@@ -64,7 +64,7 @@ def resize_image(img, target_size):
 
     return aspect_ratio, final_img
 
-class HumanMeshEstimator:
+class HumanMeshEstimatorCamsmplify:
     def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False, use_smplify=False):
         self.device = (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
         self.model = self.init_model()
