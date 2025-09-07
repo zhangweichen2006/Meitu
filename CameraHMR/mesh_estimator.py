@@ -23,19 +23,16 @@ from core.utils.renderer_pyrd import Renderer
 from core.utils import recursive_to
 from core.utils.geometry import batch_rot2aa
 from core.cam_model.fl_net import FLNet
-from core.constants import IMAGE_SIZE, IMAGE_MEAN, IMAGE_STD, NUM_BETAS, DENSEKP_CKPT
+from core.constants import IMAGE_SIZE, IMAGE_MEAN, IMAGE_STD, NUM_BETAS
 from core.utils.geometry import rotmat_to_aa  # or batch_rot2aa
-from core.utils.geometry import aa_to_rotmat
-from types import SimpleNamespace
 
-# 假设来自 CameraHMR 的输出：
+# CameraHMR output：
 # global_orient: (B, 1, 3, 3)
 # body_pose:     (B, 23, 3, 3)
 def smpl_rotmat_to_axis_angle(global_orient_mat, body_pose_mat):
     B = global_orient_mat.shape[0]
     go_aa = rotmat_to_aa(global_orient_mat.squeeze(1))                  # (B, 3)
     body_aa = rotmat_to_aa(body_pose_mat.reshape(-1, 3, 3)).reshape(B, 23, 3)  # (B, 23, 3)
-    # 拼成 24*3 的轴角（SMPL）
     pose_aa = torch.cat([go_aa[:, None, :], body_aa], dim=1)            # (B, 24, 3)
     pose_aa_flat = pose_aa.reshape(B, 24 * 3)                           # (B, 72)
     return go_aa, body_aa, pose_aa, pose_aa_flat
@@ -66,7 +63,7 @@ def resize_image(img, target_size):
     return aspect_ratio, final_img
 
 class HumanMeshEstimator:
-    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False, use_smplify=False):
+    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False):
         self.device = (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
         self.model = self.init_model()
         self.detector = self.init_detector(threshold)
@@ -76,31 +73,6 @@ class HumanMeshEstimator:
         self.mesh_opacity = mesh_opacity
         self.same_mesh_color = same_mesh_color
         self.save_smpl_obj = save_smpl_obj
-        self.use_smplify = use_smplify
-        self.smplify = None
-        self.smplify_args = None
-        self.densekp_model = None
-
-        if self.use_smplify:
-            try:
-                # Lazy import to avoid heavy deps if not requested
-                from CamSMPLify.cam_smplify import SMPLify
-                from CamSMPLify.constants import LOSS_CUT, LOW_THRESHOLD, HIGH_THRESHOLD
-                from core.densekp_trainer import DenseKP
-                # Initialize SMPLify
-                self.smplify = SMPLify(vis=False, verbose=False, device=self.device)
-                self.smplify_args = SimpleNamespace(
-                    loss_cut=LOSS_CUT,
-                    high_threshold=HIGH_THRESHOLD,
-                    low_threshold=LOW_THRESHOLD,
-                    vis_int=100,
-                )
-                # Load DenseKP for dense 2D keypoints required by SMPLify
-                self.densekp_model = DenseKP.load_from_checkpoint(DENSEKP_CKPT, strict=False).to(self.device)
-                self.densekp_model.eval()
-            except Exception as e:
-                print(f"Failed to initialize CamSMPLify / DenseKP; continuing without refinement: {e}")
-                self.use_smplify = False
 
     def init_cam_model(self):
         model = FLNet()
@@ -170,7 +142,6 @@ class HumanMeshEstimator:
 
     def process_image(self, img_path, output_img_folder, output_cam_folder, i, no_id=True):
         img_cv2 = cv2.imread(str(img_path))
-        print(img_path)
         if img_cv2 is None:
             try:
                 # Fallback for formats not handled by OpenCV (e.g., GIF/WEBP)
@@ -192,8 +163,8 @@ class HumanMeshEstimator:
             suffix=f'_{i:06d}'
         overlay_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}{suffix}{img_ext}')
         mesh_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}{suffix}.obj')
-        if output_cam_folder:
-            cam_fname = os.path.join(output_cam_folder, f'{os.path.basename(fname)}{suffix}.json')
+        if not output_cam_folder:
+            output_cam_folder = output_img_folder
 
         # Detect humans in the image
         det_out = self.detector(img_cv2)
@@ -211,78 +182,10 @@ class HumanMeshEstimator:
         for batch in dataloader:
             batch = recursive_to(batch, self.device)
             img_h, img_w = batch['img_size'][0] # resize to 256x256
-            # Ensure Python ints for JSON friendliness
-            try:
-                import torch as _torch
-                if isinstance(img_h, _torch.Tensor):
-                    img_h = int(img_h.detach().cpu().item())
-                else:
-                    img_h = int(img_h)
-                if isinstance(img_w, _torch.Tensor):
-                    img_w = int(img_w.detach().cpu().item())
-                else:
-                    img_w = int(img_w)
-            except Exception:
-                img_h = int(img_h)
-                img_w = int(img_w)
             with torch.no_grad():
                 out_smpl_params, out_cam, focal_length_ = self.model(batch)
 
             output_vertices, output_joints, output_cam_trans = self.get_output_mesh(out_smpl_params, out_cam, batch)
-
-            # Optional CamSMPLify refinement per detected person
-            if self.use_smplify and self.smplify is not None and self.densekp_model is not None:
-                try:
-                    with torch.no_grad():
-                        dk_out = self.densekp_model(batch)
-                        dense_kp_batch = dk_out['pred_keypoints']  # (B, K, 3), normalized ~[-0.5,0.5]
-
-                    # Convert initial rotmats to axis-angle for SMPLify init
-                    go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
-                        out_smpl_params['global_orient'], out_smpl_params['body_pose']
-                    )
-
-                    B = pose_aa_flat.shape[0]
-                    refined_vertices = output_vertices.clone()
-                    refined_cam_t = output_cam_trans.clone()
-
-                    for bi in range(B):
-                        try:
-                            init_pose_flat = pose_aa_flat[bi].detach().cpu().numpy()[None, :]
-                            init_betas = out_smpl_params['betas'][bi].detach().cpu().numpy()[None, :]
-                            cam_t_init = refined_cam_t[bi].detach().cpu().numpy()
-                            center = batch['box_center'][bi].detach().cpu().numpy()
-                            scale = (batch['box_size'][bi].detach().cpu().item() / 200.0)
-                            cam_int = batch['cam_int'][bi].detach().cpu().numpy()
-                            imgname = batch['imgname'][bi] if isinstance(batch['imgname'], (list, tuple)) else batch['imgname']
-                            dense_kp = dense_kp_batch[bi].detach().cpu().numpy()
-
-                            result = self.smplify(self.smplify_args, init_pose_flat, init_betas, cam_t_init,
-                                                   center, scale, cam_int, imgname,
-                                                   joints_2d_=None, dense_kp=dense_kp, ind=bi)
-                            if isinstance(result, dict) and result:
-                                # Build refined SMPL parameter dict for our SMPL layer
-                                go_aa_ref = result['global_orient'].detach().view(1, 1, 3)
-                                body_aa_ref = result['pose'].detach().view(1, 23, 3)
-                                go_mat_ref = aa_to_rotmat(go_aa_ref.view(1, 3)).view(1, 1, 3, 3)
-                                body_mat_ref = aa_to_rotmat(body_aa_ref.view(23, 3)).view(1, 23, 3, 3)
-                                betas_ref = result['betas'].detach().view(1, -1)
-
-                                params_refined = {
-                                    'global_orient': go_mat_ref.to(self.device).float(),
-                                    'body_pose': body_mat_ref.to(self.device).float(),
-                                    'betas': betas_ref.to(self.device).float(),
-                                }
-                                smpl_out_ref = self.smpl_model(**params_refined)
-                                refined_vertices[bi] = smpl_out_ref.vertices[0]
-                                refined_cam_t[bi] = result['camera_translation'].detach().to(self.device)
-                        except Exception as e:
-                            print(f"CamSMPLify refinement failed for person {bi}: {e}")
-
-                    output_vertices = refined_vertices
-                    output_cam_trans = refined_cam_t
-                except Exception as e:
-                    print(f"CamSMPLify pipeline failed; rendering initial predictions. Error: {e}")
 
             if self.save_smpl_obj:
                 mesh = trimesh.Trimesh(output_vertices[0].cpu().numpy() , self.smpl_model.faces,
@@ -318,31 +221,28 @@ class HumanMeshEstimator:
                 def tensor_to_list(t, max_len=None):
                     if t is None:
                         return None
-                    arr = t.detach().float().cpu().numpy()#.reshape(-1)
+                    arr = t.detach().float().cpu().numpy().reshape(-1)
                     if max_len is not None:
                         arr = arr[:max_len]
                     return arr.tolist()
 
-                # Convert to JSON-compatible axis-angle and keep first 21 body joints -> 21*3
+                # Convert to JSON-compatible axis-angle and drop head(15), hands(22,23) -> 21*3
                 go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
                     out_smpl_params['global_orient'], out_smpl_params['body_pose']
                 )
-                # body_aa corresponds to SMPL joints 1..23 → take first 21 joints directly
-                body_aa_21 = body_aa[:, :21, :]
+                # body_aa corresponds to SMPL joints 1..23 → map SMPL drop idx {15,22,23} to body idx {14,21,22}
+                keep_body_indices = [i for i in range(body_aa.shape[1]) if i not in (14, 21, 22)]
+                body_aa_21 = body_aa[:, keep_body_indices, :]
 
-                global_orient = tensor_to_list(go_aa.squeeze(0)) or [0.0, 0.0, 0.0]
-                body_pose = tensor_to_list(body_aa_21.squeeze(0)) or [[0.0, 0.0, 0.0] for _ in range(21)] #21*3
-                betas_raw = tensor_to_list(out_smpl_params.get('betas').squeeze(0)) or [0.0] * 10
+                global_orient = tensor_to_list(go_aa) or [0.0, 0.0, 0.0]
+                body_pose = tensor_to_list(body_aa_21.reshape(-1)) or [0.0] * 63
+                betas_raw = tensor_to_list(out_smpl_params.get('betas')) or [0.0] * 10
                 betas_save = (betas_raw + [0.0] * 10)[:10]
 
-                cam_t = tensor_to_list(output_cam_trans[0].squeeze(0)) if isinstance(output_cam_trans, torch.Tensor) else [0.0, 0.0, 2.0]
+                cam_t = tensor_to_list(output_cam_trans[0]) if isinstance(output_cam_trans, torch.Tensor) else [0.0, 0.0, 2.0]
                 camera_R = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
                 camera_t = cam_t[:3] if cam_t is not None else [0.0, 0.0, 2.0]
-                # Ensure Python float (CPU) for JSON
-                if isinstance(focal_length_, torch.Tensor):
-                    f_est = float(focal_length_[0].detach().cpu().item())
-                else:
-                    f_est = float(focal_length_)
+                f_est = float(focal_length_[0]) if isinstance(focal_length_, torch.Tensor) else float(focal_length_)
                 camera = {
                     "R": camera_R,
                     "t": camera_t,
@@ -359,7 +259,6 @@ class HumanMeshEstimator:
                     "root_pose": global_orient,
                     "body_pose": body_pose,
                     "betas_save": betas_save,
-                    "nlf_smplx_betas": betas_save,
                     "lhand_pose": zeros_hand,
                     "rhand_pose": zeros_hand,
                     "jaw_pose": zeros3,
@@ -374,7 +273,7 @@ class HumanMeshEstimator:
                     json.dump(idol_json, f)
 
             except Exception as e:
-                print(f"Failed to export Camera info for IDOL inputs {fname}: {e}")
+                print(f"Failed to export IDOL inputs for {fname}: {e}")
 
 
     def run_on_images(self, image_folder, out_folder, out_cam_folder):
@@ -410,58 +309,6 @@ class HumanMeshEstimator:
                 out_smpl_params, out_cam, focal_length_ = self.model(batch)
 
             output_vertices, output_joints, output_cam_trans = self.get_output_mesh(out_smpl_params, out_cam, batch)
-
-            # Optional CamSMPLify refinement for video frames as well
-            if self.use_smplify and self.smplify is not None and self.densekp_model is not None:
-                try:
-                    with torch.no_grad():
-                        dk_out = self.densekp_model(batch)
-                        dense_kp_batch = dk_out['pred_keypoints']
-
-                    go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
-                        out_smpl_params['global_orient'], out_smpl_params['body_pose']
-                    )
-
-                    B = pose_aa_flat.shape[0]
-                    refined_vertices = output_vertices.clone()
-                    refined_cam_t = output_cam_trans.clone()
-
-                    for bi in range(B):
-                        try:
-                            init_pose_flat = pose_aa_flat[bi].detach().cpu().numpy()[None, :]
-                            init_betas = out_smpl_params['betas'][bi].detach().cpu().numpy()[None, :]
-                            cam_t_init = refined_cam_t[bi].detach().cpu().numpy()
-                            center = batch['box_center'][bi].detach().cpu().numpy()
-                            scale = (batch['box_size'][bi].detach().cpu().item() / 200.0)
-                            cam_int = batch['cam_int'][bi].detach().cpu().numpy()
-                            imgname = f"frame_{frame_index}"
-                            dense_kp = dense_kp_batch[bi].detach().cpu().numpy()
-
-                            result = self.smplify(self.smplify_args, init_pose_flat, init_betas, cam_t_init,
-                                                   center, scale, cam_int, imgname,
-                                                   joints_2d_=None, dense_kp=dense_kp, ind=bi)
-                            if isinstance(result, dict) and result:
-                                go_aa_ref = result['global_orient'].detach().view(1, 1, 3)
-                                body_aa_ref = result['pose'].detach().view(1, 23, 3)
-                                go_mat_ref = aa_to_rotmat(go_aa_ref.view(1, 3)).view(1, 1, 3, 3)
-                                body_mat_ref = aa_to_rotmat(body_aa_ref.view(23, 3)).view(1, 23, 3, 3)
-                                betas_ref = result['betas'].detach().view(1, -1)
-
-                                params_refined = {
-                                    'global_orient': go_mat_ref.to(self.device).float(),
-                                    'body_pose': body_mat_ref.to(self.device).float(),
-                                    'betas': betas_ref.to(self.device).float(),
-                                }
-                                smpl_out_ref = self.smpl_model(**params_refined)
-                                refined_vertices[bi] = smpl_out_ref.vertices[0]
-                                refined_cam_t[bi] = result['camera_translation'].detach().to(self.device)
-                        except Exception as e:
-                            print(f"CamSMPLify refinement (video) failed for person {bi}: {e}")
-
-                    output_vertices = refined_vertices
-                    output_cam_trans = refined_cam_t
-                except Exception as e:
-                    print(f"CamSMPLify pipeline (video) failed; using initial predictions. Error: {e}")
 
             if self.save_smpl_obj:
                 mesh = trimesh.Trimesh(output_vertices[0].cpu().numpy() , self.smpl_model.faces,
@@ -505,12 +352,13 @@ class HumanMeshEstimator:
                         arr = arr[:max_len]
                     return arr.tolist()
 
-                # Convert to JSON-compatible axis-angle and keep first 21 body joints -> 21*3
+                # Convert to JSON-compatible axis-angle and drop head(15), hands(22,23) -> 21*3
                 go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
                     out_smpl_params['global_orient'], out_smpl_params['body_pose']
                 )
-                # body_aa corresponds to SMPL joints 1..23 → take first 21 joints directly
-                body_aa_21 = body_aa[:, :21, :]
+                # body_aa corresponds to SMPL joints 1..23 → map SMPL drop idx {15,22,23} to body idx {14,21,22}
+                keep_body_indices = [i for i in range(body_aa.shape[1]) if i not in (14, 21, 22)]
+                body_aa_21 = body_aa[:, keep_body_indices, :]
                 global_orient = tensor_to_list(go_aa) or [0.0, 0.0, 0.0]
                 body_pose = tensor_to_list(body_aa_21.reshape(-1)) or [0.0] * 63
                 betas_raw = tensor_to_list(out_smpl_params.get('betas')) or [0.0] * 10

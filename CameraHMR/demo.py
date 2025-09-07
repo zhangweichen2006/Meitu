@@ -1,4 +1,5 @@
 import argparse
+from mesh_estimator_camsmplify import HumanMeshEstimator as HumanMeshEstimatorCamsmplify
 from mesh_estimator import HumanMeshEstimator
 
 
@@ -27,10 +28,14 @@ def main():
 
     parser = make_parser()
     args = parser.parse_args()
+
     estimator = HumanMeshEstimator(mesh_opacity=args.opacity,
                                    same_mesh_color=args.same_mesh_color,
-                                   save_smpl_obj=args.save_smpl_obj,
-                                   use_smplify=args.use_smplify)
+                                   save_smpl_obj=args.save_smpl_obj)
+    # estimator = HumanMeshEstimatorCamsmplify(mesh_opacity=args.opacity,
+    #                                same_mesh_color=args.same_mesh_color,
+    #                                save_smpl_obj=args.save_smpl_obj,
+    #                                use_smplify=args.use_smplify)
     if args.video:
         estimator.run_on_video(args.video, args.output_folder, args.output_cam)
     else:
