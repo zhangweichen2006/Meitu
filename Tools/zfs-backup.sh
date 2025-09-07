@@ -15,6 +15,14 @@ if ! zpool list -H -o name 2>/dev/null | grep -qx "$BACKUP_POOL"; then
   exit 0
 fi
 
+# Safety: ensure backup pool root never auto-mounts
+if zfs get -H -o value mountpoint "$BACKUP_POOL" >/dev/null 2>&1; then
+  zfs set mountpoint=none "$BACKUP_POOL" >/dev/null 2>&1
+  zfs set canmount=off "$BACKUP_POOL" >/dev/null 2>&1
+fi
+
+# Do not mount or reference /backup; keep all backup datasets unmounted
+
 # --- Pools to protect (explicit includes) ---
 # Include rpool, data, and bpool; exclude BACKUP_POOL only.
 CANDIDATE_POOLS=("rpool" "data" "bpool")
@@ -66,8 +74,12 @@ for POOL in "${POOLS[@]}"; do
     # Ensure destination hierarchy exists
     if ! zfs list -H -o name "$DST_FS" >/dev/null 2>&1; then
       echo "  -> create dest: $DST_FS"
-      zfs create -p "$DST_FS"
+      zfs create -p -o canmount=noauto -o mountpoint=none "$DST_FS"
     fi
+
+    # Enforce safe mount properties on destination (even if it already existed)
+    zfs set canmount=noauto "$DST_FS" >/dev/null 2>&1
+    zfs set mountpoint=none "$DST_FS" >/dev/null 2>&1
 
     # Find previous source snapshot for this dataset (latest older daily-YYYYmmdd)
     PREV=$(zfs list -t snapshot -o name -s creation 2>/dev/null \
@@ -104,7 +116,7 @@ for POOL in "${POOLS[@]}"; do
   while IFS= read -r DS; do
     # All daily snapshots for this dataset, sorted old->new
     MAPFILE -t ALL < <(zfs list -t snapshot -o name -s creation 2>/dev/null \
-                       | grep -E "^${DS}@daily-[0-9]{8}$" || true)
+                       | grep -E "^${DS}@daily-[0-9]{8}$" )
     [ ${#ALL[@]} -eq 0 ] && continue
 
     # Keep newest 7 daily
