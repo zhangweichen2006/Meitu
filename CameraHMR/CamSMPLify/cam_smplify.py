@@ -154,7 +154,6 @@ class SMPLify:
             draw_add = torch.zeros((joints_2d.shape[0],1))
             try:
                 image_full = read_img(imgname)
-                image_full = image_full[:, :, ::-1]
             except Exception as e:
                 print(f"[WARN] Failed to read image for visualization {imgname}: {e}")
                 image_full = None
