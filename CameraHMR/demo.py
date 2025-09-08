@@ -15,6 +15,8 @@ def make_parser():
         help="Path to folder output folder.")
     parser.add_argument("--output_cam", type=str,
         help="Path to folder output camera folder.")
+    parser.add_argument("--export_init_npz", type=str,
+        help="Path to write init params (.npz) for CamSMPLify optimize.py")
     parser.add_argument("--opacity", type=float, default=0.5,
         help="Overlay opacity for meshes in [0,1]; lower = more transparent.")
     parser.add_argument("--same_mesh_color", action="store_true",
@@ -32,7 +34,8 @@ def main():
     estimator = HumanMeshEstimator(mesh_opacity=args.opacity,
                                    same_mesh_color=args.same_mesh_color,
                                    save_smpl_obj=args.save_smpl_obj,
-                                   use_smplify=args.use_smplify)
+                                   use_smplify=args.use_smplify,
+                                   export_init_npz=args.export_init_npz)
     if args.video:
         estimator.run_on_video(args.video, args.output_folder, args.output_cam)
     else:

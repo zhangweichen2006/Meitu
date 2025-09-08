@@ -416,6 +416,9 @@ class HumanMeshEstimator:
         if self.export_init_npz and self._init_records:
             try:
                 import numpy as _np
+                out_dir = os.path.dirname(self.export_init_npz)
+                if out_dir:
+                    os.makedirs(out_dir, exist_ok=True)
                 out = {k: [] for k in ['pose','shape','cam_int','cam_t','center','scale','imgname','dense_kp']}
                 for rec in self._init_records:
                     for k in out.keys():
