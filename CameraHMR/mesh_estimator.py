@@ -342,16 +342,7 @@ class HumanMeshEstimator:
             # === Export SMPL-X-like params and camera for IDOL reconstruct (image mode) ===
             if output_cam_folder:
                 try:
-                    # Save/copy the input image to IDOL dir with even dims (as JPEG)
-                    id_img_path = os.path.join(output_img_folder, f"{os.path.basename(fname)}.jpg")
-                    src = img_cv2
-                    h, w = src.shape[:2]
-                    pad_h = h % 2
-                    pad_w = w % 2
-                    if pad_h != 0 or pad_w != 0:
-                        src = cv2.copyMakeBorder(src, 0, pad_h, 0, pad_w, cv2.BORDER_REPLICATE)
-                    cv2.imwrite(id_img_path, src)
-
+                    # Save camera JSON
                     def tensor_to_list(t, max_len=None):
                         if t is None:
                             return None
@@ -406,7 +397,7 @@ class HumanMeshEstimator:
                         "trans": [0.0, 0.0, 0.0],
                     }
 
-                    id_json_path = os.path.join(output_cam_folder, f"{os.path.basename(fname)}.json")
+                    id_json_path = os.path.join(output_cam_folder, f"{os.path.basename(fname)}{suffix}.json")
                     with open(id_json_path, 'w') as f:
                         json.dump(idol_json, f)
 
