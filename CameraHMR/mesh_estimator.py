@@ -291,7 +291,12 @@ class HumanMeshEstimator:
                 mesh.export(mesh_fname)
 
             # Render overlay
-            focal_length = (focal_length_[0], focal_length_[0])
+            # Prefer focal from cam_int if available; fallback to estimated
+            if isinstance(batch['cam_int'], torch.Tensor):
+                f_val = float(batch['cam_int'][0, 0, 0].detach().cpu().item())
+            else:
+                f_val = float(focal_length_[0]) if isinstance(focal_length_, torch.Tensor) else float(focal_length_)
+            focal_length = (f_val, f_val)
             pred_vertices_array = (output_vertices + output_cam_trans.unsqueeze(1)).detach().cpu().numpy()
             renderer = Renderer(focal_length=focal_length[0], img_w=img_w, img_h=img_h, faces=self.smpl_model.faces, same_mesh_color=self.same_mesh_color, mesh_opacity=self.mesh_opacity)
             # Convert BGR (cv2) -> RGB for renderer, then back to BGR for saving
@@ -468,7 +473,11 @@ class HumanMeshEstimator:
                                 process=False)
                 mesh.export(mesh_fname)
 
-            focal_length = (focal_length_[0], focal_length_[0])
+            if isinstance(batch['cam_int'], torch.Tensor):
+                f_val = float(batch['cam_int'][0, 0, 0].detach().cpu().item())
+            else:
+                f_val = float(focal_length_[0]) if isinstance(focal_length_, torch.Tensor) else float(focal_length_)
+            focal_length = (f_val, f_val)
             pred_vertices_array = (output_vertices + output_cam_trans.unsqueeze(1)).detach().cpu().numpy()
             renderer = Renderer(focal_length=focal_length[0], img_w=img_w, img_h=img_h, faces=self.smpl_model.faces, same_mesh_color=self.same_mesh_color, mesh_opacity=self.mesh_opacity)
             bg_img_rgb = cv2.cvtColor(img_cv2.copy(), cv2.COLOR_BGR2RGB)
