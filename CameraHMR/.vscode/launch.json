@@ -13,7 +13,8 @@
             "env": {
                 "CUDA_VISIBLE_DEVICES": "1"
             },
-            "args": ["--image_folder", "data/demo_files_for_optimization/demo_images", "--output_folder", "out_demo_opt"]
+            "args": ["--image_folder", "data/demo_files_for_optimization/demo_images", "--output_folder", "out_demo_opt",
+            "--output_cam", "out_demo_opt_cam"]
         }
     ]
 }
