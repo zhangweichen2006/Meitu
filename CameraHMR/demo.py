@@ -1,3 +1,5 @@
+import os
+os.environ['PYOPENGL_PLATFORM'] = 'egl'
 import argparse
 from mesh_estimator import HumanMeshEstimator
 

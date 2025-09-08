@@ -66,7 +66,7 @@ def resize_image(img, target_size):
     return aspect_ratio, final_img
 
 class HumanMeshEstimator:
-    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False, use_smplify=False):
+    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False, use_smplify=False, export_init_npz=None):
         self.device = (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
         self.model = self.init_model()
         self.detector = self.init_detector(threshold)
@@ -80,8 +80,10 @@ class HumanMeshEstimator:
         self.smplify = None
         self.smplify_args = None
         self.densekp_model = None
+        self.export_init_npz = export_init_npz
+        self._init_records = [] if export_init_npz else None
 
-        if self.use_smplify:
+        if self.use_smplify or self.export_init_npz:
             try:
                 # Lazy import to avoid heavy deps if not requested
                 from CamSMPLify.cam_smplify import SMPLify
@@ -95,7 +97,7 @@ class HumanMeshEstimator:
                     low_threshold=LOW_THRESHOLD,
                     vis_int=100,
                 )
-                # Load DenseKP for dense 2D keypoints required by SMPLify
+                # Load DenseKP for dense 2D keypoints required by SMPLify / exporter
                 self.densekp_model = DenseKP.load_from_checkpoint(DENSEKP_CKPT, strict=False).to(self.device)
                 self.densekp_model.eval()
             except Exception as e:
@@ -230,6 +232,36 @@ class HumanMeshEstimator:
                 out_smpl_params, out_cam, focal_length_ = self.model(batch)
 
             output_vertices, output_joints, output_cam_trans = self.get_output_mesh(out_smpl_params, out_cam, batch)
+            # === Collect init params for offline CamSMPLify (.npz) ===
+            if self.export_init_npz is not None:
+                try:
+                    go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
+                        out_smpl_params['global_orient'], out_smpl_params['body_pose']
+                    )
+                    # DenseKP if available, else zeros
+                    if self.densekp_model is not None:
+                        with torch.no_grad():
+                            dk_out = self.densekp_model(batch)
+                            dense_kp_batch = dk_out['pred_keypoints']  # (B, K, 3)
+                    else:
+                        dense_kp_batch = None
+
+                    B = pose_aa_flat.shape[0]
+                    for bi in range(B):
+                        record = {
+                            'pose': pose_aa_flat[bi].detach().cpu().numpy().reshape(24, 3),
+                            'shape': out_smpl_params['betas'][bi].detach().cpu().numpy(),
+                            'cam_int': batch['cam_int'][bi].detach().cpu().numpy(),
+                            'cam_t': output_cam_trans[bi].detach().cpu().numpy(),
+                            'center': batch['box_center'][bi].detach().cpu().numpy(),
+                            'scale': float(batch['box_size'][bi].detach().cpu().item()),
+                            'imgname': batch['imgname'][bi] if isinstance(batch['imgname'], (list, tuple)) else batch['imgname'],
+                        }
+                        if dense_kp_batch is not None:
+                            record['dense_kp'] = dense_kp_batch[bi].detach().cpu().numpy()
+                        self._init_records.append(record)
+                except Exception as e:
+                    print(f"Exporter (init .npz) collection failed: {e}")
 
             # Optional CamSMPLify refinement per detected person
             if self.use_smplify and self.smplify is not None and self.densekp_model is not None:
@@ -389,6 +421,28 @@ class HumanMeshEstimator:
         images_list = [image for ext in image_extensions for image in glob(os.path.join(image_folder, ext))]
         for ind, img_path in enumerate(images_list):
             self.process_image(img_path, out_folder, out_cam_folder, ind)
+        # Save collected init .npz
+        if self.export_init_npz and self._init_records:
+            try:
+                import numpy as _np
+                out = {k: [] for k in ['pose','shape','cam_int','cam_t','center','scale','imgname','dense_kp']}
+                for rec in self._init_records:
+                    for k in out.keys():
+                        if k in rec:
+                            out[k].append(rec[k])
+                # Stack appropriately
+                out_np = {}
+                for k, v in out.items():
+                    if len(v) == 0:
+                        continue
+                    if k == 'imgname':
+                        out_np[k] = _np.array(v)
+                    else:
+                        out_np[k] = _np.array(v, dtype=_np.float32)
+                _np.savez(self.export_init_npz, **out_np)
+                print(f"Saved init params to {self.export_init_npz}")
+            except Exception as e:
+                print(f"Failed to save init .npz: {e}")
 
     def process_frame(self, frame_bgr, output_img_folder, frame_index):
         img_cv2 = frame_bgr
