@@ -15,12 +15,12 @@
                 "PYOPENGL_PLATFORM": "egl",
                 "LIBGL_ALWAYS_SOFTWARE": "1"
             },
-            "args": ["--image_folder", "data/demo_files_for_optimization/demo_images", "--output_folder", "out_demo_opt",
-                    "--output_cam", "out_demo_opt_cam","--export_init_npz","out_demo_opt_cam/init.npz"]
+            "args": ["--vis", "False", "--save_vis_dir", "out_camsmplify", "--input", "out_demo_opt_cam/init.npz", "--output_dir", "out_camsmplify_params"]
         }
     ]
 }
-// "args": ["--vis", "False", "--save_vis_dir", "out_camsmplify"]
+// "args": ["--image_folder", "data/demo_files_for_optimization/demo_images", "--output_folder", "out_demo_opt",
+// "--output_cam", "out_demo_opt_cam","--export_init_npz","out_demo_opt_cam/init.npz"]
 
 // "args": ["--image_folder", "data/demo_files_for_optimization/demo_images", "--output_folder", "out_demo_opt",
 // "--output_cam", "out_demo_opt_cam"]

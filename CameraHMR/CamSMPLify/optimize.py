@@ -23,7 +23,10 @@ def main(args):
 
         if not os.path.exists(img_path):
             print(f"File not found: {img_path}")
-            continue
+            img_path = coco_data["imgname"][i]
+            if not os.path.exists(img_path):
+                print(f"File not found: {img_path}")
+                continue
 
         # Extract data
         pose = np.expand_dims(coco_data["pose"][i], axis=0)

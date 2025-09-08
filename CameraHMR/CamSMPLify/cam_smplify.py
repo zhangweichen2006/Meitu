@@ -1,6 +1,11 @@
 import os
+import sys
 import pickle
 import cv2
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
+
 import constants
 import torch
 import trimesh

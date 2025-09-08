@@ -39,6 +39,10 @@ SMPLX_MODEL_DIR='data/models/SMPLX'
 SMPL_MODEL_DIR='data/models/SMPL'
 VITPOSE_BACKBONE='data/train-eval-utils/vitpose_backbone.pth'
 
+# SAPIENS_FEAT_BACKBONE
+# SAPIENS_DEPTH_BACKBONE
+# SAPIENS_NORMAL_BACKBONE
+
 JOINT_NAMES = [
 # 25 OpenPose joints (in the order provided by OpenPose)
 'OP Nose',
