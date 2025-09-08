@@ -12,7 +12,7 @@
             "console": "integratedTerminal",
             "env": {
                 "CUDA_VISIBLE_DEVICES": "1",
-                "PYOPENGL_PLATFORM": "osmesa",
+                "PYOPENGL_PLATFORM": "egl",
                 "LIBGL_ALWAYS_SOFTWARE": "1"
             },
             "args": ["--vis", "False", "--save_vis_dir", "out_camsmplify"]
