@@ -11,14 +11,17 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "env": {
-                "CUDA_VISIBLE_DEVICES": "1"
+                "CUDA_VISIBLE_DEVICES": "1",
+                "PYOPENGL_PLATFORM": "osmesa",
+                "LIBGL_ALWAYS_SOFTWARE": "1"
             },
-            "args": ["--image_folder", "data/demo_files_for_optimization/demo_images", "--output_folder", "out_demo_opt",
-            "--output_cam", "out_demo_opt_cam"]
+            "args": ["--vis", "False", "--save_vis_dir", "out_camsmplify"]
         }
     ]
 }
 
+// "args": ["--image_folder", "data/demo_files_for_optimization/demo_images", "--output_folder", "out_demo_opt",
+// "--output_cam", "out_demo_opt_cam"]
 // "args": ["--image_folder", "data/demo_files_for_optimization/demo_images", "--output_folder", "out_demo_opt"]
 // --image_folder data/demo_files_for_optimization/demo_images --output_folder out_camsmplify --npz_path data/demo_files_for_optimization/init_params/filtered_aic.npz
 // "args": ["--vis", "True", "--save_vis_dir", "out_camsmplify"]
