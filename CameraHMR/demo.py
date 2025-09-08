@@ -21,6 +21,8 @@ def make_parser():
         help="Only output the image with the mesh overlayed on top.")
     parser.add_argument("--use_smplify", action="store_true",
         help="Enable CamSMPLify refinement using 2D dense keypoints and intrinsics.")
+    parser.add_argument("--render_only", action="store_true",
+        help="Save rendered SMPL only (no background) to output_folder.")
     return parser
 
 def main():
@@ -30,7 +32,8 @@ def main():
     estimator = HumanMeshEstimator(mesh_opacity=args.opacity,
                                    same_mesh_color=args.same_mesh_color,
                                    save_smpl_obj=args.save_smpl_obj,
-                                   use_smplify=args.use_smplify)
+                                   use_smplify=args.use_smplify,
+                                   render_only=args.render_only)
     if args.video:
         estimator.run_on_video(args.video, args.output_folder, args.output_cam)
     else:

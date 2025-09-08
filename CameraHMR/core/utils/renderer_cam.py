@@ -1,9 +1,5 @@
 import os
 import cv2
-
-
-
-os.environ['PYOPENGL_PLATFORM'] = 'egl'
 # os.environ['EGL_DEVICE_ID'] = os.environ['GPU_DEVICE_ORDINAL'].split(',')[0] \
 #     if 'GPU_DEVICE_ORDINAL' in os.environ.keys() else '0'
 

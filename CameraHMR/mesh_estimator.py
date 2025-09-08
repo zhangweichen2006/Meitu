@@ -298,13 +298,46 @@ class HumanMeshEstimator:
                 f_val = float(focal_length_[0]) if isinstance(focal_length_, torch.Tensor) else float(focal_length_)
             focal_length = (f_val, f_val)
             pred_vertices_array = (output_vertices + output_cam_trans.unsqueeze(1)).detach().cpu().numpy()
+            # === DEBUG: SMPL rendering variables (image) ===
+            try:
+                print("[DEBUG][image] overlay_fname:", overlay_fname)
+                print(f"[DEBUG][image] img_w={img_w}, img_h={img_h}, f_val={f_val}, focal_length={focal_length}")
+                print(f"[DEBUG][image] output_vertices: shape={tuple(output_vertices.shape)}, dtype={output_vertices.dtype}, device={output_vertices.device}")
+                print(f"[DEBUG][image] output_cam_trans: shape={tuple(output_cam_trans.shape)}, dtype={output_cam_trans.dtype}, device={output_cam_trans.device}")
+                print(f"[DEBUG][image] pred_vertices_array: shape={pred_vertices_array.shape}, dtype={pred_vertices_array.dtype}")
+                try:
+                    ov_min = float(output_vertices.min().detach().cpu().item())
+                    ov_max = float(output_vertices.max().detach().cpu().item())
+                    ot_min = float(output_cam_trans.min().detach().cpu().item())
+                    ot_max = float(output_cam_trans.max().detach().cpu().item())
+                    print(f"[DEBUG][image] output_vertices: min={ov_min:.6f}, max={ov_max:.6f}")
+                    print(f"[DEBUG][image] output_cam_trans: min={ot_min:.6f}, max={ot_max:.6f}")
+                    print(f"[DEBUG][image] pred_vertices_array: min={pred_vertices_array.min():.6f}, max={pred_vertices_array.max():.6f}")
+                except Exception as e:
+                    print(f"[DEBUG][image] stats error: {e}")
+                faces_arr = self.smpl_model.faces if isinstance(self.smpl_model.faces, np.ndarray) else np.array(self.smpl_model.faces)
+                print(f"[DEBUG][image] faces shape: {faces_arr.shape}, dtype={faces_arr.dtype}")
+            except Exception as e:
+                print(f"[DEBUG][image] pre-render variable dump failed: {e}")
             renderer = Renderer(focal_length=focal_length[0], img_w=img_w, img_h=img_h, faces=self.smpl_model.faces, same_mesh_color=self.same_mesh_color, mesh_opacity=self.mesh_opacity)
             # Convert BGR (cv2) -> RGB for renderer, then back to BGR for saving
             bg_img_rgb = cv2.cvtColor(img_cv2.copy(), cv2.COLOR_BGR2RGB)
+            try:
+                print(f"[DEBUG][image] bg_img_rgb shape={bg_img_rgb.shape}, dtype={bg_img_rgb.dtype}, min={bg_img_rgb.min()}, max={bg_img_rgb.max()}")
+            except Exception:
+                pass
             front_view_rgb = renderer.render_front_view(pred_vertices_array, bg_img_rgb=bg_img_rgb)
+            try:
+                print(f"[DEBUG][image] front_view_rgb shape={front_view_rgb.shape}, dtype={front_view_rgb.dtype}, min={front_view_rgb.min()}, max={front_view_rgb.max()}")
+            except Exception:
+                pass
             final_img_bgr = cv2.cvtColor(front_view_rgb.astype(np.uint8), cv2.COLOR_RGB2BGR)
             # Write overlay
-            cv2.imwrite(overlay_fname, final_img_bgr)
+            try:
+                ok = cv2.imwrite(overlay_fname, final_img_bgr)
+                print(f"[DEBUG][image] cv2.imwrite -> {ok} ({overlay_fname})")
+            except Exception as e:
+                print(f"[DEBUG][image] Failed to write overlay: {e}")
             renderer.delete()
 
             # === Export SMPL-X-like params and camera for IDOL reconstruct (image mode) ===
@@ -411,6 +444,20 @@ class HumanMeshEstimator:
         for batch in dataloader:
             batch = recursive_to(batch, self.device)
             img_h, img_w = batch['img_size'][0]
+            # Ensure Python ints for renderer/image ops
+            try:
+                import torch as _torch
+                if isinstance(img_h, _torch.Tensor):
+                    img_h = int(img_h.detach().cpu().item())
+                else:
+                    img_h = int(img_h)
+                if isinstance(img_w, _torch.Tensor):
+                    img_w = int(img_w.detach().cpu().item())
+                else:
+                    img_w = int(img_w)
+            except Exception:
+                img_h = int(img_h)
+                img_w = int(img_w)
             with torch.no_grad():
                 out_smpl_params, out_cam, focal_length_ = self.model(batch)
 
@@ -479,11 +526,44 @@ class HumanMeshEstimator:
                 f_val = float(focal_length_[0]) if isinstance(focal_length_, torch.Tensor) else float(focal_length_)
             focal_length = (f_val, f_val)
             pred_vertices_array = (output_vertices + output_cam_trans.unsqueeze(1)).detach().cpu().numpy()
+            # === DEBUG: SMPL rendering variables (video) ===
+            try:
+                print("[DEBUG][video] overlay_fname:", overlay_fname)
+                print(f"[DEBUG][video] img_w={img_w}, img_h={img_h}, f_val={f_val}, focal_length={focal_length}")
+                print(f"[DEBUG][video] output_vertices: shape={tuple(output_vertices.shape)}, dtype={output_vertices.dtype}, device={output_vertices.device}")
+                print(f"[DEBUG][video] output_cam_trans: shape={tuple(output_cam_trans.shape)}, dtype={output_cam_trans.dtype}, device={output_cam_trans.device}")
+                print(f"[DEBUG][video] pred_vertices_array: shape={pred_vertices_array.shape}, dtype={pred_vertices_array.dtype}")
+                try:
+                    ov_min = float(output_vertices.min().detach().cpu().item())
+                    ov_max = float(output_vertices.max().detach().cpu().item())
+                    ot_min = float(output_cam_trans.min().detach().cpu().item())
+                    ot_max = float(output_cam_trans.max().detach().cpu().item())
+                    print(f"[DEBUG][video] output_vertices: min={ov_min:.6f}, max={ov_max:.6f}")
+                    print(f"[DEBUG][video] output_cam_trans: min={ot_min:.6f}, max={ot_max:.6f}")
+                    print(f"[DEBUG][video] pred_vertices_array: min={pred_vertices_array.min():.6f}, max={pred_vertices_array.max():.6f}")
+                except Exception as e:
+                    print(f"[DEBUG][video] stats error: {e}")
+                faces_arr = self.smpl_model.faces if isinstance(self.smpl_model.faces, np.ndarray) else np.array(self.smpl_model.faces)
+                print(f"[DEBUG][video] faces shape: {faces_arr.shape}, dtype={faces_arr.dtype}")
+            except Exception as e:
+                print(f"[DEBUG][video] pre-render variable dump failed: {e}")
             renderer = Renderer(focal_length=focal_length[0], img_w=img_w, img_h=img_h, faces=self.smpl_model.faces, same_mesh_color=self.same_mesh_color, mesh_opacity=self.mesh_opacity)
             bg_img_rgb = cv2.cvtColor(img_cv2.copy(), cv2.COLOR_BGR2RGB)
+            try:
+                print(f"[DEBUG][video] bg_img_rgb shape={bg_img_rgb.shape}, dtype={bg_img_rgb.dtype}, min={bg_img_rgb.min()}, max={bg_img_rgb.max()}")
+            except Exception:
+                pass
             front_view_rgb = renderer.render_front_view(pred_vertices_array, bg_img_rgb=bg_img_rgb)
+            try:
+                print(f"[DEBUG][video] front_view_rgb shape={front_view_rgb.shape}, dtype={front_view_rgb.dtype}, min={front_view_rgb.min()}, max={front_view_rgb.max()}")
+            except Exception:
+                pass
             final_img_bgr = cv2.cvtColor(front_view_rgb.astype(np.uint8), cv2.COLOR_RGB2BGR)
-            cv2.imwrite(overlay_fname, final_img_bgr)
+            try:
+                ok = cv2.imwrite(overlay_fname, final_img_bgr)
+                print(f"[DEBUG][video] cv2.imwrite -> {ok} ({overlay_fname})")
+            except Exception as e:
+                print(f"[DEBUG][video] Failed to write overlay: {e}")
             renderer.delete()
 
             # === Export SMPL-X-like params and camera for IDOL reconstruct ===
