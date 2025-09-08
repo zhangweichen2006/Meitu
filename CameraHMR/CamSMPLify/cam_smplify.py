@@ -68,7 +68,7 @@ class SMPLify:
         self.downsample_mat = pickle.load(open(DOWNSAMPLE_MAT, 'rb')).to_dense().cuda()
 
 
-    def visualize_result(self, image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, step_tag="init"):
+    def visualize_result(self, image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, imgname=None, ind=None, step_tag="init"):
         vertices3d = smpl_output.vertices
         img_h, img_w, _ = image_full.shape
 
@@ -90,13 +90,23 @@ class SMPLify:
         combined_img = np.concatenate([render_img, non_overlay_img], axis=1)
 
         if self.save_vis_dir is not None:
-            os.makedirs(self.save_vis_dir, exist_ok=True)
-            out_path = os.path.join(self.save_vis_dir, f"vis_{step_tag}.png")
-            cv2.imwrite(out_path, combined_img[:, :, ::-1])
+            try:
+                # Create per-sample subfolder: <save_vis_dir>/<imgbase>_<personXX>/
+                imgbase = os.path.splitext(os.path.basename(imgname)) [0] if imgname is not None else "sample"
+                person_tag = f"person_{int(ind):02d}" if ind is not None and isinstance(ind, (int, np.integer)) and ind >= 0 else "person_00"
+                out_dir = os.path.join(self.save_vis_dir, f"{imgbase}_{person_tag}")
+                os.makedirs(out_dir, exist_ok=True)
+                out_path = os.path.join(out_dir, f"vis_{step_tag}.png")
+                cv2.imwrite(out_path, combined_img[:, :, ::-1])
+            except Exception as e:
+                print(f"[WARN] Failed to save visualization ({step_tag}): {e}")
         elif self.vis:
-            print("[INFO] Press any key to continue fitting")
-            cv2.imshow("Visualization", combined_img)
-            pressed_key = cv2.waitKey()
+            try:
+                print("[INFO] Press any key to continue fitting")
+                cv2.imshow("Visualization", combined_img)
+                pressed_key = cv2.waitKey()
+            except Exception as e:
+                print(f"[WARN] Failed to show visualization window: {e}")
 
 
     def __call__(self, args, init_pose, init_betas, cam_t, bbox_center, bbox_scale, cam_int, imgname, joints_2d_=None,
@@ -140,10 +150,14 @@ class SMPLify:
 
         vertices3d = smpl_output.vertices
 
-        if self.vis:
+        if self.vis or (self.save_vis_dir is not None):
             draw_add = torch.zeros((joints_2d.shape[0],1))
-            image_full = read_img(imgname)
-            image_full = image_full[:, :, ::-1]
+            try:
+                image_full = read_img(imgname)
+                image_full = image_full[:, :, ::-1]
+            except Exception as e:
+                print(f"[WARN] Failed to read image for visualization {imgname}: {e}")
+                image_full = None
 
         def run_optimization(optimizer, num_iters, pose_prior_weight, beta_prior_weight):
             nonlocal prev_loss
@@ -172,8 +186,11 @@ class SMPLify:
                 loss.backward()
                 optimizer.step()
 
-                if i % args.vis_int == 0 and (self.vis or self.save_vis_dir is not None):
-                    self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, step_tag=f"iter_{i}")
+                if i % args.vis_int == 0 and (self.vis or self.save_vis_dir is not None) and image_full is not None:
+                    try:
+                        self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, imgname=imgname, ind=ind, step_tag=f"iter_{i}")
+                    except Exception as e:
+                        print(f"[WARN] Visualization at iter {i} failed: {e}")
 
             return loss
 
@@ -216,10 +233,13 @@ class SMPLify:
 
         print('Final loss {:.4f}, Threshold cut {:.4f}'.format(loss.item(), self.threshold))
 
-        if self.vis:
-            img_h, img_w, _ = image_full.shape
-            smpl_output = self.smpl(global_orient=global_orient, body_pose=body_pose, betas=betas)
-            return_val = self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int)
+        if (self.vis or self.save_vis_dir is not None) and image_full is not None:
+            try:
+                img_h, img_w, _ = image_full.shape
+                smpl_output = self.smpl(global_orient=global_orient, body_pose=body_pose, betas=betas)
+                _ = self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, imgname=imgname, ind=ind, step_tag="final")
+            except Exception as e:
+                print(f"[WARN] Final visualization failed: {e}")
 
         return {
             'pose': body_pose,

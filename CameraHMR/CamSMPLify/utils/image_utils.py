@@ -4,7 +4,12 @@ import joblib
 import scipy.misc
 from skimage.transform import rotate, resize
 import numpy as np
-import jpeg4py as jpeg
+try:
+    import jpeg4py as jpeg
+    _HAS_JPEG4PY = True
+except Exception:
+    jpeg = None
+    _HAS_JPEG4PY = False
 from loguru import logger
 from trimesh.visual import color
 
@@ -53,17 +58,36 @@ def transform(pt, center, scale, res, invert=0, rot=0):
 
 def read_img(img_fn):
 
-    if img_fn.endswith('jpeg') or img_fn.endswith('jpg'):
+    fn_lower = img_fn.lower()
+    is_jpeg = fn_lower.endswith('jpeg') or fn_lower.endswith('jpg')
+
+    # Try jpeg4py first for JPEGs if available
+    if is_jpeg and _HAS_JPEG4PY:
         try:
-            with open(img_fn, 'rb') as f:
-                img = np.array(jpeg.JPEG(f).decode())
-        except jpeg.JPEGRuntimeError:
-            # logger.warning('{} produced a JPEGRuntimeError', img_fn)
-            img = cv2.cvtColor(cv2.imread(img_fn), cv2.COLOR_BGR2RGB)
-    else:
-    #  elif img_fn.endswith('png') or img_fn.endswith('JPG') or img_fn.endswith(''):
-        img = cv2.cvtColor(cv2.imread(img_fn), cv2.COLOR_BGR2RGB)
-    return img.astype(np.float32)
+            # jpeg4py accepts a filename path directly
+            img = np.array(jpeg.JPEG(img_fn).decode())
+            return img.astype(np.float32)
+        except Exception as e:
+            # Fallback to OpenCV/ImageIO if jpeg4py fails for any reason (e.g., libjpeg-turbo missing)
+            logger.warning(f"jpeg4py decode failed for {img_fn}: {e}. Falling back to OpenCV/ImageIO.")
+
+    # OpenCV fallback
+    img_cv = cv2.imread(img_fn)
+    if img_cv is not None:
+        img = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
+        return img.astype(np.float32)
+
+    # ImageIO ultimate fallback (handles uncommon formats or CV2 read failures)
+    try:
+        from imageio import v2 as imageio
+        img = imageio.imread(img_fn)
+        if img.ndim == 2:
+            img = np.stack([img, img, img], axis=-1)
+        if img.shape[2] == 4:
+            img = img[:, :, :3]
+        return img.astype(np.float32)
+    except Exception as e:
+        raise OSError(f"Failed to read image {img_fn} using jpeg4py, OpenCV, or imageio: {e}")
 
 
 def crop(img, center, scale, res, rot=0):

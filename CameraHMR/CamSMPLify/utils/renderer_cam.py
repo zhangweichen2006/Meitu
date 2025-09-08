@@ -1,4 +1,9 @@
 import os
+# Configure headless OpenGL backend BEFORE importing OpenGL-dependent libs
+if 'PYOPENGL_PLATFORM' not in os.environ:
+    # Default to OSMesa for broader headless compatibility; override externally if needed
+    os.environ['PYOPENGL_PLATFORM'] = 'osmesa'
+
 import cv2
 import torch
 import trimesh
@@ -9,7 +14,7 @@ from torchvision.utils import make_grid
 from typing import List, Set, Dict, Tuple, Optional
 
 
-os.environ['PYOPENGL_PLATFORM'] = 'egl'
+# Respect externally provided platform; do not override here.
 
 def get_colors():
     colors = {
@@ -125,21 +130,26 @@ def render_overlay_image(
     scene.add(light, pose=light_pose)
 
 
-    renderer = pyrender.OffscreenRenderer(
-        viewport_width=image.shape[1],
-        viewport_height=image.shape[0],
-        point_size=1.0
-    )
-
-    color, rend_depth = renderer.render(scene, flags=pyrender.RenderFlags.RGBA)
-    color = color.astype(np.float32) / 255.0
-    valid_mask = (rend_depth > 0)[:, :, None]
-    visible_weight = 0.6
-    output_img = (
-        color[:, :, :3] * valid_mask * visible_weight
-        + image * (1-valid_mask) +
-        (valid_mask) * image * (1-visible_weight)
-    )
+    try:
+        renderer = pyrender.OffscreenRenderer(
+            viewport_width=image.shape[1],
+            viewport_height=image.shape[0],
+            point_size=1.0
+        )
+        color, rend_depth = renderer.render(scene, flags=pyrender.RenderFlags.RGBA)
+        color = color.astype(np.float32) / 255.0
+        valid_mask = (rend_depth > 0)[:, :, None]
+        visible_weight = 0.6
+        output_img = (
+            color[:, :, :3] * valid_mask * visible_weight
+            + image * (1-valid_mask) +
+            (valid_mask) * image * (1-visible_weight)
+        )
+    except Exception as e:
+        # Fallback: return input image and empty mask on GL failure
+        output_img = image.astype(np.float32)
+        color = np.dstack([image, np.ones_like(image[..., :1])]).astype(np.float32)
+        valid_mask = np.zeros_like(image[..., :1], dtype=np.float32)
     # output_img = (color[:, :, :3] * valid_mask +
     #               (1 - valid_mask) * image)
     return output_img, color[:, :, :3]*valid_mask
@@ -217,17 +227,19 @@ def render_nonoverlay_image(
     scene.add(light, pose=light_pose)
 
 
-    renderer = pyrender.OffscreenRenderer(
-        viewport_width=768,
-        viewport_height=768,
-        point_size=1.0
-    )
-
-    color, rend_depth = renderer.render(scene, flags=pyrender.RenderFlags.RGBA)
-    color = color.astype(np.float32) / 255.0
-    valid_mask = (rend_depth > 0)[:, :, None]
-
-    return color[:, :, :3]*valid_mask + (1-valid_mask)
+    try:
+        renderer = pyrender.OffscreenRenderer(
+            viewport_width=768,
+            viewport_height=768,
+            point_size=1.0
+        )
+        color, rend_depth = renderer.render(scene, flags=pyrender.RenderFlags.RGBA)
+        color = color.astype(np.float32) / 255.0
+        valid_mask = (rend_depth > 0)[:, :, None]
+        return color[:, :, :3]*valid_mask + (1-valid_mask)
+    except Exception:
+        # Fallback: return a white image if GL rendering fails
+        return np.ones((768, 768, 3), dtype=np.float32)
 
 
 def render_image_group(
