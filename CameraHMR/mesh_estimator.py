@@ -185,7 +185,7 @@ class HumanMeshEstimator:
             # No detections: write original image and exit
             cv2.imwrite(overlay_fname, img_cv2)
             h, w = img_cv2.shape[:2]
-            return None, None, None, h, w, None
+            return None, None, None, h, w, None, None
         bbox_scale = (boxes[:, 2:4] - boxes[:, 0:2]) / 200.0
         bbox_center = (boxes[:, 2:4] + boxes[:, 0:2]) / 2.0
 
