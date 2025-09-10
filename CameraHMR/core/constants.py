@@ -41,7 +41,7 @@ VITPOSE_BACKBONE='data/train-eval-utils/vitpose_backbone.pth'
 
 # SAPIENS_FEAT_BACKBONE
 # SAPIENS_DEPTH_BACKBONE
-# SAPIENS_NORMAL_BACKBONE
+# SAPIENS_NORMAL_BACKBONEt
 
 JOINT_NAMES = [
 # 25 OpenPose joints (in the order provided by OpenPose)

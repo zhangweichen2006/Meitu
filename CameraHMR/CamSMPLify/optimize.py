@@ -22,7 +22,7 @@ def main(args):
         print(f"Processing: {img_path}")
 
         if not os.path.exists(img_path):
-            print(f"File not found: {img_path}")
+            # print(f"File not found: ÷{img_path}")
             img_path = coco_data["imgname"][i]
             if not os.path.exists(img_path):
                 print(f"File not found: {img_path}")
@@ -36,7 +36,10 @@ def main(args):
         center = torch.tensor(coco_data["center"][i])
         scale = torch.tensor(coco_data["scale"][i] / 200.0)
         dense_kp = coco_data["dense_kp"][i]
-        keypoints_2d = coco_data["gt_keypoints"][i]
+        if "gt_keypoints" in coco_data:
+            keypoints_2d = coco_data["gt_keypoints"][i]
+        else:
+            keypoints_2d = None
 
         # Run SMPLify optimization
         result = smplify(args, pose, betas, cam_t, center, scale, cam_int, img_path, keypoints_2d, dense_kp, i)

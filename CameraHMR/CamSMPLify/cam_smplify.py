@@ -3,9 +3,11 @@ import sys
 import pickle
 import cv2
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(CURRENT_DIR)
 if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
-
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 import constants
 import torch
 import trimesh
@@ -16,6 +18,7 @@ from losses import body_fitting_loss_dense
 from utils.smpl_openpose import SMPL
 from utils.image_utils import crop, read_img, transform
 from utils.renderer_cam import render_image_group
+from core.utils.renderer_pyrd import Renderer
 
 IMG_RES = 768
 
@@ -164,10 +167,14 @@ class SMPLify:
                 print(f"[WARN] Failed to read image for visualization {imgname}: {e}")
                 image_full = None
 
-        def run_optimization(optimizer, num_iters, pose_prior_weight, beta_prior_weight):
+        def run_optimization(optimizer, num_iters, pose_prior_weight, beta_prior_weight, phase_tag):
             nonlocal prev_loss
             for i in range(num_iters):
                 smpl_output = self.smpl(global_orient=global_orient, body_pose=body_pose, betas=betas)
+                # renderer = Renderer(focal_length=focal_length, img_w=img_w, img_h=img_h, faces=self.smpl.faces, same_mesh_color=self.same_mesh_color, mesh_opacity=self.mesh_opacity)
+                # smpl_init_img = renderer.render_front_view(smpl_output.vertices)
+                # cv2.imwrite(f'smpl_init_img_{i}.png', smpl_init_img)
+
                 model_joints, model_verts = smpl_output.joints, smpl_output.vertices
                 model_verts_sampled = self.downsample_mat.matmul(model_verts)
 
@@ -193,7 +200,7 @@ class SMPLify:
 
                 if i % args.vis_int == 0 and (self.vis or self.save_vis_dir is not None) and image_full is not None:
                     try:
-                        self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, imgname=imgname, ind=ind, step_tag=f"iter_{i}")
+                        self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, imgname=imgname, ind=ind, step_tag=f"Phase_{phase_tag}_iter_{i}")
                     except Exception as e:
                         print(f"[WARN] Visualization at iter {i} failed: {e}")
 
@@ -208,7 +215,7 @@ class SMPLify:
         body_optimizer = torch.optim.Adam([camera_translation, betas], lr=self.step_size, betas=(0.9, 0.999))
         pose_prior_weight, beta_prior_weight = 0.0, 0.0
 
-        loss = run_optimization(body_optimizer, 300, pose_prior_weight, beta_prior_weight)
+        loss = run_optimization(body_optimizer, 300, pose_prior_weight, beta_prior_weight, phase_tag="1")
 
         smpl_output = self.smpl(global_orient=global_orient, body_pose=body_pose, betas=betas)
         model_joints_init, model_verts_init = smpl_output.joints.detach(), smpl_output.vertices.detach()
@@ -221,7 +228,7 @@ class SMPLify:
         body_optimizer = torch.optim.Adam([global_orient, camera_translation, betas], lr=self.step_size, betas=(0.9, 0.999))
         pose_prior_weight, beta_prior_weight = 0.0, 0.01
 
-        loss = run_optimization(body_optimizer, 300, pose_prior_weight, beta_prior_weight)
+        loss = run_optimization(body_optimizer, 300, pose_prior_weight, beta_prior_weight, phase_tag="2")
 
         smpl_output = self.smpl(global_orient=global_orient, body_pose=body_pose, betas=betas)
         model_joints_init, model_verts_init = smpl_output.joints.detach(), smpl_output.vertices.detach()
@@ -234,7 +241,7 @@ class SMPLify:
         body_optimizer = torch.optim.Adam([body_pose, global_orient, camera_translation, betas], lr=self.step_size, betas=(0.9, 0.999))
         pose_prior_weight, beta_prior_weight = 1.0, 10.0
 
-        loss = run_optimization(body_optimizer, 500, pose_prior_weight, beta_prior_weight)
+        loss = run_optimization(body_optimizer, 500, pose_prior_weight, beta_prior_weight, phase_tag="3")
 
         print('Final loss {:.4f}, Threshold cut {:.4f}'.format(loss.item(), self.threshold))
 
@@ -242,7 +249,7 @@ class SMPLify:
             try:
                 img_h, img_w, _ = image_full.shape
                 smpl_output = self.smpl(global_orient=global_orient, body_pose=body_pose, betas=betas)
-                _ = self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, imgname=imgname, ind=ind, step_tag="final")
+                _ = self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, imgname=imgname, ind=ind, step_tag="final", phase_tag="final")
             except Exception as e:
                 print(f"[WARN] Final visualization failed: {e}")
 

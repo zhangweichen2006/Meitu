@@ -9,7 +9,7 @@ from torchvision.utils import make_grid
 from typing import List, Set, Dict, Tuple, Optional
 
 
-os.environ['PYOPENGL_PLATFORM'] = 'egl'
+# os.environ['PYOPENGL_PLATFORM'] = 'egl'
 
 def get_colors():
     colors = {

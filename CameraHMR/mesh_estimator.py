@@ -170,6 +170,122 @@ class HumanMeshEstimator:
         smpl.body_pose[0][0][:] = np.zeros(3)
 
 
+    def _process_and_render(self, img_cv2, dataset_imglabel, overlay_fname, mesh_fname):
+        """Shared pipeline used by both image and video frames.
+
+        Returns (out_smpl_params, output_cam_trans, focal_length_, img_h, img_w, batch)
+        or (None, None, None, h, w, None) if no detections.
+        """
+        # Detect humans
+        det_out = self.detector(img_cv2)
+        det_instances = det_out['instances']
+        valid_idx = (det_instances.pred_classes == 0) & (det_instances.scores > 0.5)
+        boxes = det_instances.pred_boxes.tensor[valid_idx].cpu().numpy()
+        if boxes.shape[0] == 0:
+            # No detections: write original image and exit
+            cv2.imwrite(overlay_fname, img_cv2)
+            h, w = img_cv2.shape[:2]
+            return None, None, None, h, w, None
+        bbox_scale = (boxes[:, 2:4] - boxes[:, 0:2]) / 200.0
+        bbox_center = (boxes[:, 2:4] + boxes[:, 0:2]) / 2.0
+
+        # Intrinsics and dataset
+        cam_int = self.get_cam_intrinsics(img_cv2)
+        dataset = Dataset(img_cv2, bbox_center, bbox_scale, cam_int, False, dataset_imglabel)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=False, num_workers=10)
+
+        for batch in dataloader:
+            batch = recursive_to(batch, self.device)
+            img_h, img_w = batch['img_size'][0]
+            with torch.no_grad():
+                out_smpl_params, out_cam, focal_length_ = self.model(batch)
+
+            output_vertices, output_joints, output_cam_trans = self.get_output_mesh(out_smpl_params, out_cam, batch)
+
+            # DenseKP (unified) – compute once for this batch if available
+            dense_kp_batch = None
+            if self.densekp_model is not None:
+                try:
+                    with torch.no_grad():
+                        dk_out = self.densekp_model(batch)
+                        dense_kp_batch = dk_out['pred_keypoints']  # (B, K, 3)
+                except Exception as e:
+                    print(f"DenseKP inference failed: {e}")
+
+            # Optional CamSMPLify refinement
+            if self.use_smplify and self.smplify is not None and dense_kp_batch is not None:
+                try:
+                    go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
+                        out_smpl_params['global_orient'], out_smpl_params['body_pose']
+                    )
+
+                    B = pose_aa_flat.shape[0]
+                    refined_vertices = output_vertices.clone()
+                    refined_cam_t = output_cam_trans.clone()
+
+                    for bi in range(B):
+                        try:
+                            init_pose_flat = pose_aa_flat[bi].detach().cpu().numpy()[None, :]
+                            init_betas = out_smpl_params['betas'][bi].detach().cpu().numpy()[None, :]
+                            cam_t_init = refined_cam_t[bi].detach().cpu().numpy()
+                            center = batch['box_center'][bi].detach().cpu().numpy()
+                            scale = (batch['box_size'][bi].detach().cpu().item() / 200.0)
+                            cam_int_np = batch['cam_int'][bi].detach().cpu().numpy()
+                            imgname = batch['imgname'][bi] if isinstance(batch['imgname'], (list, tuple)) else batch['imgname']
+                            dense_kp = dense_kp_batch[bi].detach().cpu().numpy()
+
+                            result = self.smplify(self.smplify_args, init_pose_flat, init_betas, cam_t_init,
+                                                   center, scale, cam_int_np, imgname,
+                                                   joints_2d_=None, dense_kp=dense_kp, ind=bi)
+                            if isinstance(result, dict) and result:
+                                go_aa_ref = result['global_orient'].detach().view(1, 1, 3)
+                                body_aa_ref = result['pose'].detach().view(1, 23, 3)
+                                go_mat_ref = aa_to_rotmat(go_aa_ref.view(1, 3)).view(1, 1, 3, 3)
+                                body_mat_ref = aa_to_rotmat(body_aa_ref.view(23, 3)).view(1, 23, 3, 3)
+                                betas_ref = result['betas'].detach().view(1, -1)
+
+                                params_refined = {
+                                    'global_orient': go_mat_ref.to(self.device).float(),
+                                    'body_pose': body_mat_ref.to(self.device).float(),
+                                    'betas': betas_ref.to(self.device).float(),
+                                }
+                                smpl_out_ref = self.smpl_model(**params_refined)
+                                refined_vertices[bi] = smpl_out_ref.vertices[0]
+                                refined_cam_t[bi] = result['camera_translation'].detach().to(self.device)
+                        except Exception as e:
+                            print(f"CamSMPLify refinement failed for person {bi}: {e}")
+
+                    output_vertices = refined_vertices
+                    output_cam_trans = refined_cam_t
+                except Exception as e:
+                    print(f"CamSMPLify pipeline failed; rendering initial predictions. Error: {e}")
+
+            if self.save_smpl_obj:
+                try:
+                    mesh = trimesh.Trimesh(output_vertices[0].cpu().numpy(), self.smpl_model.faces, process=False)
+                    mesh.export(mesh_fname)
+                except Exception as e:
+                    print(f"Failed to export OBJ {mesh_fname}: {e}")
+
+            # Render overlay
+            if isinstance(batch['cam_int'], torch.Tensor):
+                f_val = float(batch['cam_int'][0, 0, 0].detach().cpu().item())
+            else:
+                f_val = float(focal_length_[0]) if isinstance(focal_length_, torch.Tensor) else float(focal_length_)
+            focal_length = (f_val, f_val)
+            pred_vertices_array = (output_vertices + output_cam_trans.unsqueeze(1)).detach().cpu().numpy()
+            renderer = Renderer(focal_length=focal_length[0], img_w=img_w, img_h=img_h, faces=self.smpl_model.faces, same_mesh_color=self.same_mesh_color, mesh_opacity=self.mesh_opacity)
+            bg_img_rgb = cv2.cvtColor(img_cv2.copy(), cv2.COLOR_BGR2RGB)
+            front_view_rgb = renderer.render_front_view(pred_vertices_array, bg_img_rgb=bg_img_rgb)
+            final_img_bgr = cv2.cvtColor(front_view_rgb.astype(np.uint8), cv2.COLOR_RGB2BGR)
+            cv2.imwrite(overlay_fname, final_img_bgr)
+            renderer.delete()
+
+            return out_smpl_params, output_cam_trans, focal_length_, int(img_h), int(img_w), batch, dense_kp_batch
+
+        # Should not reach here (dataloader yields at least one batch if boxes exist)
+        h, w = img_cv2.shape[:2]
+        return None, None, None, h, w, None, None
     def process_image(self, img_path, output_img_folder, output_cam_folder, i, no_id=True):
         img_cv2 = cv2.imread(str(img_path))
         print(img_path)
@@ -196,148 +312,45 @@ class HumanMeshEstimator:
         mesh_fname = os.path.join(output_img_folder, f'{os.path.basename(fname)}{suffix}.obj')
         if output_cam_folder:
             os.makedirs(output_cam_folder, exist_ok=True)
-            cam_fname = os.path.join(output_cam_folder, f'{os.path.basename(fname)}{suffix}.json')
 
-        # Detect humans in the image
-        det_out = self.detector(img_cv2)
-        det_instances = det_out['instances']
-        valid_idx = (det_instances.pred_classes == 0) & (det_instances.scores > 0.5)
-        boxes = det_instances.pred_boxes.tensor[valid_idx].cpu().numpy()
-        bbox_scale = (boxes[:, 2:4] - boxes[:, 0:2]) / 200.0
-        bbox_center = (boxes[:, 2:4] + boxes[:, 0:2]) / 2.0
-
-        # Get Camera intrinsics using HumanFoV Model
-        cam_int = self.get_cam_intrinsics(img_cv2)
-        dataset = Dataset(img_cv2, bbox_center, bbox_scale, cam_int, False, img_path)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=False, num_workers=10)
-
-        for batch in dataloader:
-            batch = recursive_to(batch, self.device)
-            img_h, img_w = batch['img_size'][0] # resize to 256x256
-            # Ensure Python ints for JSON friendliness
+        out_smpl_params, output_cam_trans, focal_length_, img_h, img_w, batch, dense_kp_batch = self._process_and_render(
+            img_cv2=img_cv2,
+            dataset_imglabel=img_path,
+            overlay_fname=overlay_fname,
+            mesh_fname=mesh_fname,
+        )
+        # === Collect init params for offline CamSMPLify (.npz) ===
+        if self.export_init_npz is not None and out_smpl_params is not None and output_cam_trans is not None:
             try:
-                import torch as _torch
-                if isinstance(img_h, _torch.Tensor):
-                    img_h = int(img_h.detach().cpu().item())
-                else:
-                    img_h = int(img_h)
-                if isinstance(img_w, _torch.Tensor):
-                    img_w = int(img_w.detach().cpu().item())
-                else:
-                    img_w = int(img_w)
-            except Exception:
-                img_h = int(img_h)
-                img_w = int(img_w)
-            with torch.no_grad():
-                out_smpl_params, out_cam, focal_length_ = self.model(batch)
-
-            output_vertices, output_joints, output_cam_trans = self.get_output_mesh(out_smpl_params, out_cam, batch)
-            # === Collect init params for offline CamSMPLify (.npz) ===
-            if self.export_init_npz is not None:
-                try:
-                    go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
-                        out_smpl_params['global_orient'], out_smpl_params['body_pose']
-                    )
-                    # DenseKP if available, else zeros
-                    if self.densekp_model is not None:
-                        with torch.no_grad():
-                            dk_out = self.densekp_model(batch)
-                            dense_kp_batch = dk_out['pred_keypoints']  # (B, K, 3)
-                    else:
-                        dense_kp_batch = None
-
-                    B = pose_aa_flat.shape[0]
-                    for bi in range(B):
-                        record = {
-                            'pose': pose_aa_flat[bi].detach().cpu().numpy().reshape(24, 3),
-                            'shape': out_smpl_params['betas'][bi].detach().cpu().numpy(),
-                            'cam_int': batch['cam_int'][bi].detach().cpu().numpy(),
-                            'cam_t': output_cam_trans[bi].detach().cpu().numpy(),
-                            'center': batch['box_center'][bi].detach().cpu().numpy(),
-                            'scale': float(batch['box_size'][bi].detach().cpu().item()),
-                            'imgname': batch['imgname'][bi] if isinstance(batch['imgname'], (list, tuple)) else batch['imgname'],
-                        }
-                        if dense_kp_batch is not None:
-                            record['dense_kp'] = dense_kp_batch[bi].detach().cpu().numpy()
-                        self._init_records.append(record)
-                except Exception as e:
-                    print(f"Exporter (init .npz) collection failed: {e}")
-
-            # Optional CamSMPLify refinement per detected person
-            if self.use_smplify and self.smplify is not None and self.densekp_model is not None:
-                try:
+                go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(out_smpl_params['global_orient'], out_smpl_params['body_pose'])
+                # DenseKP if available, else zeros
+                if self.densekp_model is not None and batch is not None:
                     with torch.no_grad():
                         dk_out = self.densekp_model(batch)
-                        dense_kp_batch = dk_out['pred_keypoints']  # (B, K, 3), normalized ~[-0.5,0.5]
+                        dense_kp_batch = dk_out['pred_keypoints']  # (B, K, 3)
+                else:
+                    dense_kp_batch = None
 
-                    # Convert initial rotmats to axis-angle for SMPLify init
-                    go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
-                        out_smpl_params['global_orient'], out_smpl_params['body_pose']
-                    )
+                B = pose_aa_flat.shape[0]
+                for bi in range(B):
+                    record = {
+                        'pose': pose_aa_flat[bi].detach().cpu().numpy().reshape(24, 3),
+                        'shape': out_smpl_params['betas'][bi].detach().cpu().numpy(),
+                        'cam_int': batch['cam_int'][bi].detach().cpu().numpy() if batch is not None else None,
+                        'cam_t': output_cam_trans[bi].detach().cpu().numpy(),
+                        'center': batch['box_center'][bi].detach().cpu().numpy() if batch is not None else None,
+                        'scale': float(batch['box_size'][bi].detach().cpu().item()) if batch is not None else None,
+                        'imgname': (batch['imgname'][bi] if isinstance(batch['imgname'], (list, tuple)) else batch['imgname']) if batch is not None else img_path,
+                    }
+                    if dense_kp_batch is not None:
+                        record['dense_kp'] = dense_kp_batch[bi].detach().cpu().numpy()
+                    else:
+                        record['dense_kp'] = np.zeros((0, 3), dtype=np.float32)
+                    self._init_records.append(record)
+            except Exception as e:
+                print(f"Exporter (init .npz) collection failed: {e}")
 
-                    B = pose_aa_flat.shape[0]
-                    refined_vertices = output_vertices.clone()
-                    refined_cam_t = output_cam_trans.clone()
-
-                    for bi in range(B):
-                        try:
-                            init_pose_flat = pose_aa_flat[bi].detach().cpu().numpy()[None, :]
-                            init_betas = out_smpl_params['betas'][bi].detach().cpu().numpy()[None, :]
-                            cam_t_init = refined_cam_t[bi].detach().cpu().numpy()
-                            center = batch['box_center'][bi].detach().cpu().numpy()
-                            scale = (batch['box_size'][bi].detach().cpu().item() / 200.0)
-                            cam_int = batch['cam_int'][bi].detach().cpu().numpy()
-                            imgname = batch['imgname'][bi] if isinstance(batch['imgname'], (list, tuple)) else batch['imgname']
-                            dense_kp = dense_kp_batch[bi].detach().cpu().numpy()
-
-                            result = self.smplify(self.smplify_args, init_pose_flat, init_betas, cam_t_init,
-                                                   center, scale, cam_int, imgname,
-                                                   joints_2d_=None, dense_kp=dense_kp, ind=bi)
-                            if isinstance(result, dict) and result:
-                                # Build refined SMPL parameter dict for our SMPL layer
-                                go_aa_ref = result['global_orient'].detach().view(1, 1, 3)
-                                body_aa_ref = result['pose'].detach().view(1, 23, 3)
-                                go_mat_ref = aa_to_rotmat(go_aa_ref.view(1, 3)).view(1, 1, 3, 3)
-                                body_mat_ref = aa_to_rotmat(body_aa_ref.view(23, 3)).view(1, 23, 3, 3)
-                                betas_ref = result['betas'].detach().view(1, -1)
-
-                                params_refined = {
-                                    'global_orient': go_mat_ref.to(self.device).float(),
-                                    'body_pose': body_mat_ref.to(self.device).float(),
-                                    'betas': betas_ref.to(self.device).float(),
-                                }
-                                smpl_out_ref = self.smpl_model(**params_refined)
-                                refined_vertices[bi] = smpl_out_ref.vertices[0]
-                                refined_cam_t[bi] = result['camera_translation'].detach().to(self.device)
-                        except Exception as e:
-                            print(f"CamSMPLify refinement failed for person {bi}: {e}")
-
-                    output_vertices = refined_vertices
-                    output_cam_trans = refined_cam_t
-                except Exception as e:
-                    print(f"CamSMPLify pipeline failed; rendering initial predictions. Error: {e}")
-
-            if self.save_smpl_obj:
-                mesh = trimesh.Trimesh(output_vertices[0].cpu().numpy() , self.smpl_model.faces,
-                                process=False)
-                mesh.export(mesh_fname)
-
-            # Render overlay
-            # Prefer focal from cam_int if available; fallback to estimated
-            if isinstance(batch['cam_int'], torch.Tensor):
-                f_val = float(batch['cam_int'][0, 0, 0].detach().cpu().item())
-            else:
-                f_val = float(focal_length_[0]) if isinstance(focal_length_, torch.Tensor) else float(focal_length_)
-            focal_length = (f_val, f_val)
-            pred_vertices_array = (output_vertices + output_cam_trans.unsqueeze(1)).detach().cpu().numpy()
-            renderer = Renderer(focal_length=focal_length[0], img_w=img_w, img_h=img_h, faces=self.smpl_model.faces, same_mesh_color=self.same_mesh_color, mesh_opacity=self.mesh_opacity)
-            # Convert BGR (cv2) -> RGB for renderer, then back to BGR for saving
-            bg_img_rgb = cv2.cvtColor(img_cv2.copy(), cv2.COLOR_BGR2RGB)
-            front_view_rgb = renderer.render_front_view(pred_vertices_array, bg_img_rgb=bg_img_rgb)
-            final_img_bgr = cv2.cvtColor(front_view_rgb.astype(np.uint8), cv2.COLOR_RGB2BGR)
-            # Write overlay
-            cv2.imwrite(overlay_fname, final_img_bgr)
-            renderer.delete()
+            # Rendering is handled inside _process_and_render
 
             # === Export SMPL-X-like params and camera for IDOL reconstruct (image mode) ===
             if output_cam_folder:
@@ -445,172 +458,82 @@ class HumanMeshEstimator:
         overlay_fname = os.path.join(output_img_folder, f'{fname}{img_ext}')
         mesh_fname = os.path.join(output_img_folder, f'{fname}.obj')
 
-        det_out = self.detector(img_cv2)
-        det_instances = det_out['instances']
-        valid_idx = (det_instances.pred_classes == 0) & (det_instances.scores > 0.5)
-        boxes = det_instances.pred_boxes.tensor[valid_idx].cpu().numpy()
-        bbox_scale = (boxes[:, 2:4] - boxes[:, 0:2]) / 200.0
-        bbox_center = (boxes[:, 2:4] + boxes[:, 0:2]) / 2.0
+        out_smpl_params, output_cam_trans, focal_length_, img_h, img_w, batch, dense_kp_batch = self._process_and_render(
+            img_cv2=img_cv2,
+            dataset_imglabel=f"frame_{frame_index}",
+            overlay_fname=overlay_fname,
+            mesh_fname=mesh_fname,
+        )
+        # === Export SMPL-X-like params and camera for IDOL reconstruct ===
+        try:
+            idol_root = "/home/cevin/Meitu/IDOL"
+            idol_img_dir = os.path.join(idol_root, "test_data_img", "all")
+            os.makedirs(idol_img_dir, exist_ok=True)
 
-        cam_int = self.get_cam_intrinsics(img_cv2)
-        dataset = Dataset(img_cv2, bbox_center, bbox_scale, cam_int, False, f"frame_{frame_index}")
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=False, num_workers=10)
-
-        for batch in dataloader:
-            batch = recursive_to(batch, self.device)
-            img_h, img_w = batch['img_size'][0]
-            with torch.no_grad():
-                out_smpl_params, out_cam, focal_length_ = self.model(batch)
-
-            output_vertices, output_joints, output_cam_trans = self.get_output_mesh(out_smpl_params, out_cam, batch)
-
-            # Optional CamSMPLify refinement for video frames as well
-            if self.use_smplify and self.smplify is not None and self.densekp_model is not None:
-                try:
-                    with torch.no_grad():
-                        dk_out = self.densekp_model(batch)
-                        dense_kp_batch = dk_out['pred_keypoints']
-
-                    go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
-                        out_smpl_params['global_orient'], out_smpl_params['body_pose']
-                    )
-
-                    B = pose_aa_flat.shape[0]
-                    refined_vertices = output_vertices.clone()
-                    refined_cam_t = output_cam_trans.clone()
-
-                    for bi in range(B):
-                        try:
-                            init_pose_flat = pose_aa_flat[bi].detach().cpu().numpy()[None, :]
-                            init_betas = out_smpl_params['betas'][bi].detach().cpu().numpy()[None, :]
-                            cam_t_init = refined_cam_t[bi].detach().cpu().numpy()
-                            center = batch['box_center'][bi].detach().cpu().numpy()
-                            scale = (batch['box_size'][bi].detach().cpu().item() / 200.0)
-                            cam_int = batch['cam_int'][bi].detach().cpu().numpy()
-                            imgname = f"frame_{frame_index}"
-                            dense_kp = dense_kp_batch[bi].detach().cpu().numpy()
-
-                            result = self.smplify(self.smplify_args, init_pose_flat, init_betas, cam_t_init,
-                                                   center, scale, cam_int, imgname,
-                                                   joints_2d_=None, dense_kp=dense_kp, ind=bi)
-                            if isinstance(result, dict) and result:
-                                go_aa_ref = result['global_orient'].detach().view(1, 1, 3)
-                                body_aa_ref = result['pose'].detach().view(1, 23, 3)
-                                go_mat_ref = aa_to_rotmat(go_aa_ref.view(1, 3)).view(1, 1, 3, 3)
-                                body_mat_ref = aa_to_rotmat(body_aa_ref.view(23, 3)).view(1, 23, 3, 3)
-                                betas_ref = result['betas'].detach().view(1, -1)
-
-                                params_refined = {
-                                    'global_orient': go_mat_ref.to(self.device).float(),
-                                    'body_pose': body_mat_ref.to(self.device).float(),
-                                    'betas': betas_ref.to(self.device).float(),
-                                }
-                                smpl_out_ref = self.smpl_model(**params_refined)
-                                refined_vertices[bi] = smpl_out_ref.vertices[0]
-                                refined_cam_t[bi] = result['camera_translation'].detach().to(self.device)
-                        except Exception as e:
-                            print(f"CamSMPLify refinement (video) failed for person {bi}: {e}")
-
-                    output_vertices = refined_vertices
-                    output_cam_trans = refined_cam_t
-                except Exception as e:
-                    print(f"CamSMPLify pipeline (video) failed; using initial predictions. Error: {e}")
-
-            if self.save_smpl_obj:
-                mesh = trimesh.Trimesh(output_vertices[0].cpu().numpy() , self.smpl_model.faces,
-                                process=False)
-                mesh.export(mesh_fname)
-
-            if isinstance(batch['cam_int'], torch.Tensor):
-                f_val = float(batch['cam_int'][0, 0, 0].detach().cpu().item())
+            # Save the raw frame for IDOL input (even-sized JPEG)
+            id_img_path = os.path.join(idol_img_dir, f"{fname}.jpg")
+            h, w = img_cv2.shape[:2]
+            pad_h = h % 2
+            pad_w = w % 2
+            if pad_h != 0 or pad_w != 0:
+                img_to_save = cv2.copyMakeBorder(img_cv2, 0, pad_h, 0, pad_w, cv2.BORDER_REPLICATE)
             else:
-                f_val = float(focal_length_[0]) if isinstance(focal_length_, torch.Tensor) else float(focal_length_)
-            focal_length = (f_val, f_val)
-            pred_vertices_array = (output_vertices + output_cam_trans.unsqueeze(1)).detach().cpu().numpy()
-            renderer = Renderer(focal_length=focal_length[0], img_w=img_w, img_h=img_h, faces=self.smpl_model.faces, same_mesh_color=self.same_mesh_color, mesh_opacity=self.mesh_opacity)
-            bg_img_rgb = cv2.cvtColor(img_cv2.copy(), cv2.COLOR_BGR2RGB)
-            front_view_rgb = renderer.render_front_view(pred_vertices_array, bg_img_rgb=bg_img_rgb)
-            final_img_bgr = cv2.cvtColor(front_view_rgb.astype(np.uint8), cv2.COLOR_RGB2BGR)
-            cv2.imwrite(overlay_fname, final_img_bgr)
-            renderer.delete()
+                img_to_save = img_cv2
+            cv2.imwrite(id_img_path, img_to_save)
 
-            # === Export SMPL-X-like params and camera for IDOL reconstruct ===
-            try:
-                idol_root = "/home/cevin/Meitu/IDOL"
-                idol_img_dir = os.path.join(idol_root, "test_data_img", "all")
-                os.makedirs(idol_img_dir, exist_ok=True)
+            # Build SMPL/SMPL-X parameter JSON expected by IDOL's load_smplify_json
+            def tensor_to_list(t, max_len=None):
+                if t is None:
+                    return None
+                arr = t.detach().float().cpu().numpy().reshape(-1)
+                if max_len is not None:
+                    arr = arr[:max_len]
+                return arr.tolist()
 
-                # Save the raw frame for IDOL input (even-sized JPEG)
-                id_img_path = os.path.join(idol_img_dir, f"{fname}.jpg")
-                # pad to even dims to be safe for downstream video encoding later
-                h, w = img_cv2.shape[:2]
-                pad_h = h % 2
-                pad_w = w % 2
-                if pad_h != 0 or pad_w != 0:
-                    img_to_save = cv2.copyMakeBorder(img_cv2, 0, pad_h, 0, pad_w, cv2.BORDER_REPLICATE)
-                else:
-                    img_to_save = img_cv2
-                cv2.imwrite(id_img_path, img_to_save)
+            go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
+                out_smpl_params['global_orient'], out_smpl_params['body_pose']
+            )
+            body_aa_21 = body_aa[:, :21, :]
+            global_orient = tensor_to_list(go_aa) or [0.0, 0.0, 0.0]
+            body_pose = tensor_to_list(body_aa_21.reshape(-1)) or [0.0] * 63
+            betas_raw = tensor_to_list(out_smpl_params.get('betas')) or [0.0] * 10
+            betas_save = (betas_raw + [0.0] * 10)[:10]
 
-                # Build SMPL/SMPL-X parameter JSON expected by IDOL's load_smplify_json
-                # Extract first item in batch
-                def tensor_to_list(t, max_len=None):
-                    if t is None:
-                        return None
-                    arr = t.detach().float().cpu().numpy().reshape(-1)
-                    if max_len is not None:
-                        arr = arr[:max_len]
-                    return arr.tolist()
+            cam_t = tensor_to_list(output_cam_trans[0]) if isinstance(output_cam_trans, torch.Tensor) else [0.0, 0.0, 2.0]
+            camera_R = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+            camera_t = cam_t[:3] if cam_t is not None else [0.0, 0.0, 2.0]
+            f_est = float(focal_length_[0]) if isinstance(focal_length_, torch.Tensor) else float(focal_length_)
+            camera = {
+                "R": camera_R,
+                "t": camera_t,
+                "focal": [f_est, f_est],
+                "princpt": [img_w / 2.0, img_h / 2.0],
+            }
 
-                # Convert to JSON-compatible axis-angle and keep first 21 body joints -> 21*3
-                go_aa, body_aa, pose_aa, pose_aa_flat = smpl_rotmat_to_axis_angle(
-                    out_smpl_params['global_orient'], out_smpl_params['body_pose']
-                )
-                # body_aa corresponds to SMPL joints 1..23 → take first 21 joints directly
-                body_aa_21 = body_aa[:, :21, :]
-                global_orient = tensor_to_list(go_aa) or [0.0, 0.0, 0.0]
-                body_pose = tensor_to_list(body_aa_21.reshape(-1)) or [0.0] * 63
-                betas_raw = tensor_to_list(out_smpl_params.get('betas')) or [0.0] * 10
-                betas_save = (betas_raw + [0.0] * 10)[:10]
+            zeros_hand = [0.0] * 45
+            zeros3 = [0.0, 0.0, 0.0]
+            zeros_expr10 = [0.0] * 10
 
-                # Camera extrinsics: use identity R and translation from our conversion
-                cam_t = tensor_to_list(output_cam_trans[0]) if isinstance(output_cam_trans, torch.Tensor) else [0.0, 0.0, 2.0]
-                camera_R = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-                camera_t = cam_t[:3] if cam_t is not None else [0.0, 0.0, 2.0]
-                # Intrinsics from estimated focal and image center
-                f_est = float(focal_length_[0]) if isinstance(focal_length_, torch.Tensor) else float(focal_length_)
-                camera = {
-                    "R": camera_R,
-                    "t": camera_t,
-                    "focal": [f_est, f_est],
-                    "princpt": [img_w / 2.0, img_h / 2.0],
-                }
+            idol_json = {
+                "camera": camera,
+                "root_pose": global_orient,
+                "body_pose": body_pose,
+                "betas_save": betas_save,
+                "lhand_pose": zeros_hand,
+                "rhand_pose": zeros_hand,
+                "jaw_pose": zeros3,
+                "leye_pose": zeros3,
+                "reye_pose": zeros3,
+                "expr": zeros_expr10,
+                "trans": [0.0, 0.0, 0.0],
+            }
 
-                # Fill remaining SMPL-X fields with zeros
-                zeros_hand = [0.0] * 45
-                zeros3 = [0.0, 0.0, 0.0]
-                zeros_expr10 = [0.0] * 10
+            id_json_path = os.path.join(idol_img_dir, f"{fname}.json")
+            with open(id_json_path, 'w') as f:
+                json.dump(idol_json, f)
 
-                idol_json = {
-                    "camera": camera,
-                    "root_pose": global_orient,
-                    "body_pose": body_pose,
-                    "betas_save": betas_save,
-                    "lhand_pose": zeros_hand,
-                    "rhand_pose": zeros_hand,
-                    "jaw_pose": zeros3,
-                    "leye_pose": zeros3,
-                    "reye_pose": zeros3,
-                    "expr": zeros_expr10,
-                    "trans": [0.0, 0.0, 0.0],
-                }
-
-                id_json_path = os.path.join(idol_img_dir, f"{fname}.json")
-                with open(id_json_path, 'w') as f:
-                    json.dump(idol_json, f)
-
-            except Exception as e:
-                print(f"Failed to export IDOL inputs for {fname}: {e}")
+        except Exception as e:
+            print(f"Failed to export IDOL inputs for {fname}: {e}")
 
     def _export_video_from_frames(self, frames_dir, video_out_path, fps):
         pattern = os.path.join(frames_dir, 'frame_%06d.png')
