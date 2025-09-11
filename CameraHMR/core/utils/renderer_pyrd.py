@@ -1,12 +1,13 @@
 
 import os
+os.environ.setdefault('PYOPENGL_PLATFORM', 'egl')
+os.environ.setdefault('MESA_GL_VERSION_OVERRIDE', '3.3')
+os.environ.setdefault('MESA_GLSL_VERSION_OVERRIDE', '330')
 import trimesh
 import pyrender
 import numpy as np
 import colorsys
 import cv2
-
-os.environ['PYOPENGL_PLATFORM'] = 'egl'
 
 class Renderer(object):
 

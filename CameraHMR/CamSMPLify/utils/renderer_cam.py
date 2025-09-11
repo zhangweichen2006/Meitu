@@ -1,4 +1,7 @@
 import os
+os.environ.setdefault('PYOPENGL_PLATFORM', 'egl')
+os.environ.setdefault('MESA_GL_VERSION_OVERRIDE', '3.3')
+os.environ.setdefault('MESA_GLSL_VERSION_OVERRIDE', '330')
 import cv2
 import torch
 import trimesh
@@ -7,9 +10,6 @@ import numpy as np
 from smplx import SMPL
 from torchvision.utils import make_grid
 from typing import List, Set, Dict, Tuple, Optional
-
-
-# os.environ['PYOPENGL_PLATFORM'] = 'egl'
 
 def get_colors():
     colors = {
@@ -80,24 +80,26 @@ def render_overlay_image(
 
     camera_translation[0] *= -1.
 
-    mesh = trimesh.Trimesh(vertices, faces, process=False)
+    # Work on a copy to avoid mutating caller's array
+    camera_translation = camera_translation.copy()
+    tm = trimesh.Trimesh(vertices, faces, process=False)
 
     if correct_ori:
         rot = trimesh.transformations.rotation_matrix(
             np.radians(180), [1, 0, 0])
-        mesh.apply_transform(rot)
+        tm.apply_transform(rot)
 
     if sideview_angle > 0:
         rot = trimesh.transformations.rotation_matrix(
             np.radians(sideview_angle), [0, 1, 0])
-        mesh.apply_transform(rot)
+        tm.apply_transform(rot)
 
     if mesh_filename:
-        mesh.export(mesh_filename)
+        tm.export(mesh_filename)
         if not mesh_filename.endswith('_rot.obj'):
             np.save(mesh_filename.replace('.obj', '.npy'), camera_translation)
 
-    mesh = pyrender.Mesh.from_trimesh(mesh, material=material)
+    mesh = pyrender.Mesh.from_trimesh(tm, material=material)
 
     scene = pyrender.Scene(bg_color=[0.0, 0.0, 0.0, 0.0],
                            ambient_light=np.ones(3) * 0)
@@ -131,7 +133,30 @@ def render_overlay_image(
         point_size=1.0
     )
 
-    color, rend_depth = renderer.render(scene, flags=pyrender.RenderFlags.RGBA)
+    try:
+        color, rend_depth = renderer.render(scene, flags=pyrender.RenderFlags.RGBA)
+    except Exception as e:
+        # Fallback to simple shading for environments lacking PBR/GLSL 330
+        try:
+            fallback_scene = pyrender.Scene(bg_color=[0.0, 0.0, 0.0, 0.0],
+                                            ambient_light=np.ones(3))
+            fallback_mesh = pyrender.Mesh.from_trimesh(tm, smooth=False)
+            fallback_scene.add(fallback_mesh)
+            fallback_scene.add(camera, pose=camera_pose)
+            color, rend_depth = renderer.render(
+                fallback_scene,
+                flags=(pyrender.RenderFlags.RGBA | getattr(pyrender.RenderFlags, 'FLAT', 0))
+            )
+        except Exception:
+            # As a last resort, return the input image unchanged
+            h, w = image.shape[:2]
+            color = np.dstack([image * 255.0, np.zeros((h, w, 1), dtype=image.dtype)])
+            rend_depth = np.zeros((h, w), dtype=np.float32)
+    finally:
+        try:
+            renderer.delete()
+        except Exception:
+            pass
     color = color.astype(np.float32) / 255.0
     valid_mask = (rend_depth > 0)[:, :, None]
     visible_weight = 0.6
@@ -159,6 +184,10 @@ def render_nonoverlay_image(
         mesh_filename: str = None,
         add_ground_plane: bool = True,
         correct_ori: bool = True,
+        show_camera: bool = False,
+        camera_of_interest_translation: np.ndarray = None,
+        camera_of_interest_rotation: np.ndarray = None,
+        camera_marker_size: float = 0.08,
 ) -> np.ndarray:
 
     mesh_color = get_colors()[mesh_color]
@@ -170,24 +199,26 @@ def render_nonoverlay_image(
 
     camera_translation[0] *= -1.
 
-    mesh = trimesh.Trimesh(vertices, faces, process=False)
+    # Work on a copy to avoid mutating caller's array
+    camera_translation = camera_translation.copy()
+    tm = trimesh.Trimesh(vertices, faces, process=False)
 
     if correct_ori:
         rot = trimesh.transformations.rotation_matrix(
             np.radians(180), [1, 0, 0])
-        mesh.apply_transform(rot)
+        tm.apply_transform(rot)
 
     if sideview_angle > 0:
         rot = trimesh.transformations.rotation_matrix(
             np.radians(sideview_angle), [0, 1, 0])
-        mesh.apply_transform(rot)
+        tm.apply_transform(rot)
 
     if mesh_filename:
-        mesh.export(mesh_filename)
+        tm.export(mesh_filename)
         if not mesh_filename.endswith('_rot.obj'):
             np.save(mesh_filename.replace('.obj', '.npy'), camera_translation)
 
-    mesh = pyrender.Mesh.from_trimesh(mesh, material=material)
+    mesh = pyrender.Mesh.from_trimesh(tm, material=material)
 
     scene = pyrender.Scene(bg_color=[1.0, 1.0, 1.0, 1.0],
                            ambient_light=np.ones(3) * 0)
@@ -195,6 +226,7 @@ def render_nonoverlay_image(
     scene.add(mesh, 'mesh')
 
 
+    # View camera pose (used to render this non-overlay image)
     camera_pose = np.eye(4)
     if camera_rotation is not None:
         camera_pose[:3, :3] = camera_rotation
@@ -206,6 +238,29 @@ def render_nonoverlay_image(
                                        cx=camera_center[0], cy=camera_center[1])
 
     scene.add(camera, pose=camera_pose)
+
+    # Optionally visualize the (estimated) main camera location in the scene
+    if show_camera and camera_of_interest_translation is not None:
+        marker_color = [255, 0, 0, 255]
+        try:
+            cam_marker_tm = trimesh.creation.uv_sphere(radius=camera_marker_size)
+        except Exception:
+            # Fallback if creation module is unavailable
+            cam_marker_tm = trimesh.primitives.Sphere(radius=camera_marker_size)
+        cam_marker_tm.visual.face_colors = marker_color
+
+        cam_marker_pose = np.eye(4)
+        # Match the X-flip convention used for camera translations
+        coi_trans = camera_of_interest_translation.copy()
+        coi_trans[0] *= -1.0
+        if camera_of_interest_rotation is not None:
+            cam_marker_pose[:3, :3] = camera_of_interest_rotation
+            cam_marker_pose[:3, 3] = camera_of_interest_rotation @ coi_trans
+        else:
+            cam_marker_pose[:3, 3] = coi_trans
+
+        cam_marker_mesh = pyrender.Mesh.from_trimesh(cam_marker_tm, smooth=False)
+        scene.add(cam_marker_mesh, pose=cam_marker_pose)
 
 
     # Create light source
@@ -223,7 +278,30 @@ def render_nonoverlay_image(
         point_size=1.0
     )
 
-    color, rend_depth = renderer.render(scene, flags=pyrender.RenderFlags.RGBA)
+    try:
+        color, rend_depth = renderer.render(scene, flags=pyrender.RenderFlags.RGBA)
+    except Exception as e:
+        # Fallback to simple shading for environments lacking PBR/GLSL 330
+        try:
+            fallback_scene = pyrender.Scene(bg_color=[1.0, 1.0, 1.0, 1.0],
+                                            ambient_light=np.ones(3))
+            fallback_mesh = pyrender.Mesh.from_trimesh(tm, smooth=False)
+            fallback_scene.add(fallback_mesh)
+            fallback_scene.add(camera, pose=camera_pose)
+            color, rend_depth = renderer.render(
+                fallback_scene,
+                flags=(pyrender.RenderFlags.RGBA | getattr(pyrender.RenderFlags, 'FLAT', 0))
+            )
+        except Exception:
+            # As a last resort, render a blank image (white background)
+            h, w = 768, 768
+            color = np.ones((h, w, 4), dtype=np.uint8) * 255
+            rend_depth = np.zeros((h, w), dtype=np.float32)
+    finally:
+        try:
+            renderer.delete()
+        except Exception:
+            pass
     color = color.astype(np.float32) / 255.0
     valid_mask = (rend_depth > 0)[:, :, None]
 
@@ -293,6 +371,9 @@ def render_image_group(
         sideview_angle=90,
         add_ground_plane=False,
         correct_ori=correct_ori,
+        show_camera=True,
+        camera_of_interest_translation=camera_translation,
+        camera_of_interest_rotation=camera_rotation,
     )
     if save_filename is not None:
         images_save = overlay_img * 255

@@ -3,10 +3,7 @@ import argparse
 import numpy as np
 import torch
 from cam_smplify import SMPLify
-from core.backbones import create_backbone
-from core.constants import DETECTRON_CKPT, VITPOSE_BACKBONE, IMAGE_MEAN, IMAGE_STD
-from detectron2.config import LazyConfig
-from core.utils.utils_detectron2 import DefaultPredictor_Lazy
+from core.constants import DETECTRON_CKPT, VITPOSE_BACKBONE
 
 
 def convert_coco17_to_body25(coco_kps):
@@ -113,74 +110,7 @@ def _infer_keypoints_mmpose(img_path, det_cfg, det_ckpt, pose_cfg, pose_ckpt, de
     return persons
 
 
-class SimplePoseDecoder(torch.nn.Module):
-    """A minimal heatmap head for ViTPose backbone features.
-    Converts feature map (B, C, H', W') to COCO-17 heatmaps (B, 17, 64, 48).
-    """
-    def __init__(self, in_channels=1280, num_joints=17, out_h=64, out_w=48):
-        super().__init__()
-        self.proj = torch.nn.Conv2d(in_channels, num_joints, kernel_size=1, bias=True)
-        self.out_h = out_h
-        self.out_w = out_w
-
-    def forward(self, x):
-        # x: (B, C, H', W')
-        h = self.proj(x)
-        h = torch.nn.functional.interpolate(h, size=(self.out_h, self.out_w), mode='bilinear', align_corners=False)
-        return h
-
-
-def _keypoints_from_heatmaps(hm):
-    """Argmax decode heatmaps to (N,17,3) with [x,y,conf] in image pixels (256x192)."""
-    B, J, H, W = hm.shape
-    hm_reshaped = hm.view(B, J, -1)
-    conf, idx = torch.max(hm_reshaped, dim=-1)  # (B,J)
-    ys = (idx // W).float()
-    xs = (idx % W).float()
-    # map from heatmap (W=48,H=64) to image (W=192,H=256)
-    xs_img = xs * (192.0 / W)
-    ys_img = ys * (256.0 / H)
-    kps = torch.stack([xs_img, ys_img, conf], dim=-1)  # (B,J,3)
-    return kps
-
-
-def _infer_keypoints_vitpose(img_path, predictor, backbone, decoder, device='cuda'):
-    import cv2
-    img = cv2.imread(img_path)
-    if img is None:
-        return []
-    out = predictor(img)
-    inst = out['instances']
-    valid = (inst.pred_classes == 0) & (inst.scores > 0.5)
-    boxes = inst.pred_boxes.tensor[valid].cpu().numpy()
-    persons = []
-    if boxes.shape[0] == 0:
-        return persons
-    # Normalize util
-    mean = torch.tensor(IMAGE_MEAN, dtype=torch.float32).view(1,3,1,1)
-    std = torch.tensor(IMAGE_STD, dtype=torch.float32).view(1,3,1,1)
-    for b in boxes:
-        x1, y1, x2, y2 = [int(v) for v in b[:4]]
-        x1, y1 = max(0, x1), max(0, y1)
-        x2, y2 = min(img.shape[1]-1, x2), min(img.shape[0]-1, y2)
-        crop = img[y1:y2, x1:x2, :]
-        if crop.size == 0:
-            continue
-        crop = cv2.resize(crop, (192, 256), interpolation=cv2.INTER_LINEAR)
-        crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-        t = torch.from_numpy(crop_rgb.transpose(2,0,1)).float()/255.0
-        t = (t - mean.squeeze())/std.squeeze()
-        t = t.unsqueeze(0).to(device)
-        backbone = backbone.to(device)
-        decoder = decoder.to(device)
-        with torch.no_grad():
-            feats = backbone(t)            # (1,C,H',W')
-            if isinstance(feats, (list, tuple)):
-                feats = feats[-1]
-            heatmaps = decoder(feats)      # (1,17,64,48)
-            kps = _keypoints_from_heatmaps(heatmaps)[0].cpu().numpy()
-        persons.append({'keypoints': kps, 'bbox': [x1,y1,x2,y2]})
-    return persons
+# Removed simplified decoder path: we now require official ViTPose (MMPose) config+checkpoint for full head decoding.
 
 def main(args):
 
@@ -221,30 +151,18 @@ def main(args):
 
         # If no gt_keypoints, run MMPose to get COCO-17 and convert to BODY_25
         if keypoints_2d is None or (hasattr(keypoints_2d, 'size') and keypoints_2d.size == 0):
-            # Try ViTPose backbone + simple decoder first
-            backbone = create_backbone()
-            sd = torch.load(VITPOSE_BACKBONE, map_location='cpu')
-            sd = sd.get('state_dict', sd)
-            missing, unexpected = backbone.load_state_dict(sd, strict=False)
-            backbone.eval()
-            pose_dec = SimplePoseDecoder(in_channels=backbone.embed_dim if hasattr(backbone, 'embed_dim') else 1280,
-                                         num_joints=17)
-            # If the checkpoint is a ViTPose+ pretrain (no head), we won’t have decoder weights; use random init
-            # Try detectron2 person detector from our constants to get bboxes, then run backbone+decoder
-            det_cfg = LazyConfig.load(str('core/utils/cascade_mask_rcnn_vitdet_h_75ep.py'))
-            det_cfg.train.init_checkpoint = DETECTRON_CKPT
-            predictor = DefaultPredictor_Lazy(det_cfg)
-            persons = _infer_keypoints_vitpose(img_path, predictor, backbone, pose_dec, device=args.device)
-            # Fallback to MMPose if no persons found or empty
-            if len(persons) == 0 and args.pose_config and args.pose_checkpoint:
-                persons = _infer_keypoints_mmpose(
-                    img_path,
-                    det_cfg=args.det_config,
-                    det_ckpt=args.det_checkpoint,
-                    pose_cfg=args.pose_config,
-                    pose_ckpt=args.pose_checkpoint,
-                    device=args.device
-                )
+            # Strict requirement: use official ViTPose (MMPose) for full head decoding.
+            # If using ViTPose+ foundation weights, first split:
+            #   python tools/model_split.py --source ${VITPOSE_BACKBONE}
+            # Then pass the resulting full pose checkpoint to --pose_checkpoint along with --pose_config.
+            persons = _infer_keypoints_mmpose(
+                img_path,
+                det_cfg=args.det_config,
+                det_ckpt=args.det_checkpoint or DETECTRON_CKPT,
+                pose_cfg=args.pose_config,
+                pose_ckpt=args.pose_checkpoint,
+                device=args.device
+            )
             if len(persons) > 0:
                 # pick the person whose bbox best matches our center/scale (IoU)
                 cx, cy = center[0].item(), center[1].item()

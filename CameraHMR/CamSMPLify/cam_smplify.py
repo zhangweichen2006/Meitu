@@ -249,7 +249,7 @@ class SMPLify:
             try:
                 img_h, img_w, _ = image_full.shape
                 smpl_output = self.smpl(global_orient=global_orient, body_pose=body_pose, betas=betas)
-                _ = self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, imgname=imgname, ind=ind, step_tag="final", phase_tag="final")
+                _ = self.visualize_result(image_full, smpl_output, focal_length, bbox_center, bbox_scale, camera_translation, cam_int, imgname=imgname, ind=ind, step_tag="final")
             except Exception as e:
                 print(f"[WARN] Final visualization failed: {e}")
 

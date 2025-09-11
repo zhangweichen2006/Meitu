@@ -12,16 +12,18 @@
             "console": "integratedTerminal",
             "env": {
                 "CUDA_VISIBLE_DEVICES": "1",
-                "PYOPENGL_PLATFORM": "egl",
-                "LIBGL_ALWAYS_SOFTWARE": "1"
+                // "PYOPENGL_PLATFORM": "egl",
+                "PYOPENGL_PLATFORM": "osmesa",
             },
-            "args": ["--image_folder", "../data/test_data_img/all", "--output_folder", "outputs/meitu_test", "--output_cam", "outputs/meitu_test_cam" ,"--export_init_npz","outputs/meitu_test_cam/test.npz"]
-
+            "args": ["--vis", "False", "--save_vis_dir", "out/out_camsmplify", "--input", "out/out_demo_opt_cam/init.npz", "--output_dir", "out/out_camsmplify_params"]
         }
     ]
 }
-// "args": ["--vis", "False", "--save_vis_dir", "out_camsmplify", "--input", "out_demo_opt_cam/init.npz", "--output_dir", "out_camsmplify_params"]
 
+// "args": ["--vis", "False", "--save_vis_dir", "outputs/meitu_test_camsmplify", "--input", "outputs/meitu_test_cam/test.npz", "--output_dir", "outputs/meitu_test_camsmplify_params"]
+
+// "LIBGL_ALWAYS_SOFTWARE": "1",
+// "EGL_PLATFORM": "surfaceless"
 // "args": ["--image_folder", "../data/test_data_img/all", "--output_folder", "../data/test_data_img/out", "--output_cam", "out_demo_opt_cam" ,"--export_init_npz","out_demo_opt_cam/test.npz"]
 
 // #, "--use_smplify"
