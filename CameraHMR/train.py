@@ -1,18 +1,12 @@
 "Part of the code has been taken from "
 "4DHumans: https://github.com/shubham-goel/4D-Humans"
-
 from typing import Optional, Tuple
-import pyrootutils
-
-root = pyrootutils.setup_root(
-    search_from=__file__,
-    indicator=[".git", "pyproject.toml"],
-    pythonpath=True,
-    dotenv=True,
-)
-
 import os
 from pathlib import Path
+
+# Resolve project root from current file location instead of using git/pyproject
+PROJECT_ROOT = Path(__file__).resolve().parent
+os.environ.setdefault("PROJECT_ROOT", str(PROJECT_ROOT))
 
 import hydra
 import pytorch_lightning as pl
@@ -107,7 +101,7 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     log.info("Fitting done")
 
 
-@hydra.main(version_base="1.2", config_path=str(root/"core/configs_hydra"), config_name="train.yaml")
+@hydra.main(version_base="1.2", config_path=str((PROJECT_ROOT/"core"/"configs_hydra").resolve()), config_name="train.yaml")
 def main(cfg: DictConfig) -> Optional[float]:
     # train the model
     train(cfg)

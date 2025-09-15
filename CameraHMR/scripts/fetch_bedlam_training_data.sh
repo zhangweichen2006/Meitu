@@ -35,11 +35,11 @@ password=$(urle $password)
 # wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&resume=1&sfile=bedlam_images_train/20221022_3_250_batch01handhair_static_bigOffice_30fps.tar' -O './data/training-images/20221022_3_250_batch01handhair_static_bigOffice_30fps.tar' --no-check-certificate --continue
 # wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&resume=1&sfile=bedlam_images_train/20221024_10_100_batch01handhair_zoom_suburb_d_30fps.tar' -O './data/training-images/20221024_10_100_batch01handhair_zoom_suburb_d_30fps.tar' --no-check-certificate --continue
 # wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&resume=1&sfile=bedlam_images_train/20221024_3-10_100_batch01handhair_static_highSchoolGym_30fps.tar' -O './data/training-images/20221024_3-10_100_batch01handhair_static_highSchoolGym_30fps.tar' --no-check-certificate --continue
-# wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&resume=1&sfile=bedlam_images_train/agora_images.tar' -O './data/training-images/agora_images.tar' --no-check-certificate --continue
-# for file in data/training-images/*.tar; do
-#     tar -xvf "$file" -C data/training-images/
-# done
+wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&resume=1&sfile=bedlam_images_train/agora_images.tar' -O './data/training-images/agora_images.tar' --no-check-certificate --continue
+for file in data/training-images/*.tar; do
+    tar -xvf "$file" -C data/training-images/
+done
 # SMPL version
-mkdir -p data/training-labels
-wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&sfile=bedlam-labels-smpl.zip' -O './data/training-labels/bedlam-labels-smpl.zip' --no-check-certificate --continue
-unzip data/training-labels/bedlam-labels-smpl.zip -d data/training-labels
+# mkdir -p data/training-labels
+# wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&sfile=bedlam-labels-smpl.zip' -O './data/training-labels/bedlam-labels-smpl.zip' --no-check-certificate --continue
+# unzip data/training-labels/bedlam-labels-smpl.zip -d data/training-labels

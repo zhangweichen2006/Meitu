@@ -1,0 +1,3 @@
+- data=train
+- experiment=camerahmr
+- exp_name=train_run1

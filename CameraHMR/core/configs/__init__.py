@@ -5,20 +5,20 @@ curr_dir = os.path.abspath(os.path.dirname(__file__))
 base_dir = os.path.join(curr_dir, '../../')
 DATASET_FOLDERS = {
 
-    # '3dpw-test-cam-smpl': os.path.join(base_dir, 'data/test-images/3DPW'),
-    # 'coco-val-smpl': os.path.join(base_dir, 'data/test-images/COCO2017/images/'),
-    # 'emdb-smpl': os.path.join(base_dir, 'data/test-images/EMDB'),
-    # 'spec-test-smpl': os.path.join(base_dir, 'data/test-images/spec-syn'),
-    # 'rich-smplx': os.path.join(base_dir, 'data/test-images/RICH'),
-    # 'coco-val-smpl': os.path.join(base_dir, 'data/test-images/COCO2017/images'),
+    '3dpw-test-cam-smpl': os.path.join(base_dir, 'data/test-images/3DPW'),
+    'coco-val-smpl': os.path.join(base_dir, 'data/test-images/COCO2017/images/'),
+    'emdb-smpl': os.path.join(base_dir, 'data/test-images/EMDB'),
+    'spec-test-smpl': os.path.join(base_dir, 'data/test-images/spec-syn'),
+    'rich-smplx': os.path.join(base_dir, 'data/test-images/RICH'),
+    'coco-val-smpl': os.path.join(base_dir, 'data/test-images/COCO2017/images'),
 
-    # 'insta-1': os.path.join(base_dir, 'data/training-images/insta/images/'),
-    # 'insta-2': os.path.join(base_dir, 'data/training-images/insta/images'),
-    # 'aic': os.path.join(base_dir, 'data/training-images/aic/images'),
-    # 'mpii-train':  os.path.join(base_dir, 'data/training-images/MPII-pose'),
-    # 'coco-train':  os.path.join(base_dir, 'data/training-images/COCO'),
+    'insta-1': os.path.join(base_dir, 'data/training-images/insta/images/'),
+    'insta-2': os.path.join(base_dir, 'data/training-images/insta/images'),
+    'aic': os.path.join(base_dir, 'data/training-images/aic/images'),
+    'mpii-train':  os.path.join(base_dir, 'data/training-images/MPII-pose'),
+    'coco-train':  os.path.join(base_dir, 'data/training-images/COCO'),
 
-    # 'agora-body-bbox44': os.path.join(base_dir, 'data/training-images/images'),
+    'agora-body-bbox44': os.path.join(base_dir, 'data/training-images/images'),
     'zoom-suburbd-bbox44': os.path.join(base_dir, 'data/training-images/20221010_3-10_500_batch01hand_zoom_suburb_d_6fps/png'),
     'closeup-suburba-bbox44': os.path.join(base_dir, 'data/training-images/20221011_1_250_batch01hand_closeup_suburb_a_6fps/png'),
     'closeup-suburbb-bbox44': os.path.join(base_dir, 'data/training-images/20221011_1_250_batch01hand_closeup_suburb_b_6fps/png'),
@@ -61,6 +61,7 @@ DATASET_FILES = [
         'rich-smplx': os.path.join(base_dir, 'data/test-labels/rich_test.npz'),
         'spec-test-smpl': os.path.join(base_dir, 'data/test-labels/spec_test.npz'),
         'coco-val-smpl': os.path.join(base_dir, 'data/test-labels/coco_val.npz'),
+        'zoom-suburbd-bbox44': os.path.join(base_dir, 'data/training-labels/bedlam-labels/20221010_3-10_500_batch01hand_zoom_suburb_d_6fps.npz'),
     },
     {
         'aic': os.path.join(base_dir, 'data//training-labels/aic-release.npz'),
@@ -69,7 +70,7 @@ DATASET_FILES = [
         'coco-train': os.path.join(base_dir, 'data/training-labels/coco-release.npz'),
         'mpii-train': os.path.join(base_dir, 'data/training-labels/mpii-release.npz'),
 
-        # 'agora-body-bbox44': os.path.join(base_dir, 'data/training-labels/bedlam-labels/agora.npz'),
+        'agora-body-bbox44': os.path.join(base_dir, 'data/training-labels/bedlam-labels/agora.npz'),
         'zoom-suburbd-bbox44': os.path.join(base_dir, 'data/training-labels/bedlam-labels/20221010_3-10_500_batch01hand_zoom_suburb_d_6fps.npz'),
         'closeup-suburba-bbox44': os.path.join(base_dir, 'data/training-labels/bedlam-labels/20221011_1_250_batch01hand_closeup_suburb_a_6fps.npz'),
         'closeup-suburbb-bbox44': os.path.join(base_dir, 'data/training-labels/bedlam-labels/20221011_1_250_batch01hand_closeup_suburb_b_6fps.npz'),
