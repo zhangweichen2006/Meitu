@@ -18,5 +18,5 @@ wget --post-data "username=$username&password=$password" 'https://download.is.tu
 wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=camerahmr&sfile=coco-release.npz' -O './data/training-labels/coco-release.npz' --no-check-certificate --continue
 
 
-wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=camerahmr&sfile=train-eval-utils.zip' -O './data/train-eval-utils.zip' --no-check-certificate --continue
-unzip data/train-eval-utils.zip -d data/
+# wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=camerahmr&sfile=train-eval-utils.zip' -O './data/train-eval-utils.zip' --no-check-certificate --continue
+# unzip data/train-eval-utils.zip -d data/
