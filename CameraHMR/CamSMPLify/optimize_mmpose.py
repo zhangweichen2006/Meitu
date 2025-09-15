@@ -2,9 +2,11 @@ import os
 import argparse
 import numpy as np
 import torch
-from cam_smplify import SMPLify
+from cam_smplify import SMPLify, IMG_RES
 from core.constants import DETECTRON_CKPT, VITPOSE_BACKBONE
-
+import cv2
+from utils.image_utils import read_img, transform as img_transform
+from tools.vis import vis_img, start_gradio
 
 def convert_coco17_to_body25(coco_kps):
     """Convert COCO-17 keypoints (17x3) to OpenPose BODY_25 (25x3).
@@ -119,11 +121,15 @@ def main(args):
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
     output_file_path =  os.path.join(args.output_dir, "output.npz")
+    if args.save_dense_kp_dir is not None and len(str(args.save_dense_kp_dir).strip()) > 0:
+        os.makedirs(args.save_dense_kp_dir, exist_ok=True)
 
     smplify = SMPLify(vis=args.vis, verbose=args.verbose, save_vis_dir=args.save_vis_dir)
     coco_data = np.load(init_param_file, allow_pickle=True)
 
     processed_data = {key: [] for key in coco_data}
+    if 'gt_keypoints' not in processed_data:
+        processed_data['gt_keypoints'] = []
 
     for i in range(len(coco_data['imgname'])):
         img_path = os.path.join(image_base_dir, coco_data["imgname"][i])
@@ -148,6 +154,68 @@ def main(args):
             keypoints_2d = coco_data["gt_keypoints"][i]
         else:
             keypoints_2d = None
+
+        # Optionally render and save provided dense keypoints (map to full image coords)
+        if args.save_dense_kp_dir is not None and ("dense_kp" in coco_data):
+            try:
+                # Load with alpha if present; keep BGR/BGRA for drawing
+                img_rgb = read_img(img_path) if os.path.exists(img_path) else None
+                vis_img(img_rgb)
+                if img_rgb is None:
+                    alt = coco_data["imgname"][i] if "imgname" in coco_data else None
+                    if alt and os.path.exists(alt):
+                        img_rgb = read_img(alt)
+                if img_rgb is not None:
+                    kps = coco_data["dense_kp"][i]
+                    kps = np.array(kps)
+                    if kps.ndim >= 2 and kps.shape[-1] >= 2:
+                        # Convert from normalized crop coords to crop pixels
+                        # Dataset stores dense_kp in approximately [-0.5, 0.5] range
+                        crop_xy = (kps[:, :2] + 0.5) * float(IMG_RES)
+                        # Map crop pixels to original image pixels using inverse transform
+                        center_np = center.detach().cpu().numpy()
+                        scale_val = float(scale.item()) if hasattr(scale, 'item') else float(scale)
+                        # Prepare a drawable RGB uint8 image
+                        saved_img = np.clip(img_rgb, 0, 255).astype(np.uint8).copy()
+                        h_img, w_img = saved_img.shape[:2]
+                        # Adaptive radius based on image size
+                        radius = max(2, int(round(min(h_img, w_img) * 0.003)))
+                        marker_thickness = max(1, int(round(radius * 0.6)))
+                        for idx_pt in range(crop_xy.shape[0]):
+                            x_c, y_c = float(crop_xy[idx_pt, 0]), float(crop_xy[idx_pt, 1])
+                            pt_img = img_transform([x_c, y_c], center_np, scale_val, [IMG_RES, IMG_RES], invert=1)
+                            # Confidence if available
+                            if kps.shape[-1] > 2:
+                                try:
+                                    conf = float(kps[idx_pt, 2])
+                                except Exception:
+                                    conf = 1.0
+                            else:
+                                conf = 1.0
+                            # Image here is RGB; use RGB colors (green / orange)
+                            color = (0, 255, 0) if conf >= 0.5 else (255, 165, 0)
+                            x_i, y_i = int(round(pt_img[0])), int(round(pt_img[1]))
+                            # Draw only if inside image bounds
+                            if 0 <= x_i < w_img and 0 <= y_i < h_img:
+                                # Filled circle and a small cross marker for visibility
+                                cv2.circle(saved_img, (x_i, y_i), radius, color, thickness=-1, lineType=cv2.LINE_AA)
+                                cv2.drawMarker(saved_img, (x_i, y_i), color, markerType=cv2.MARKER_CROSS, markerSize=radius*3, thickness=marker_thickness, line_type=cv2.LINE_AA)
+                            else:
+                                # Debug out-of-bounds
+                                pass
+                        stem = os.path.splitext(os.path.basename(img_path))[0]
+                        out_path = os.path.join(args.save_dense_kp_dir, f"{stem}_kp.png")
+                        # Convert to BGR/BGRA for cv2.imwrite and ensure uint8
+                        vis_img_u8 = np.clip(saved_img, 0, 255).astype(np.uint8)
+                        if len(vis_img_u8.shape) == 3 and vis_img_u8.shape[2] == 4:
+                            vis_img_out = cv2.cvtColor(vis_img_u8, cv2.COLOR_RGBA2BGRA)
+                        elif len(vis_img_u8.shape) == 3 and vis_img_u8.shape[2] == 3:
+                            vis_img_out = cv2.cvtColor(vis_img_u8, cv2.COLOR_RGB2BGR)
+                        else:
+                            vis_img_out = vis_img_u8
+                        cv2.imwrite(out_path, vis_img_out)
+            except Exception as e:
+                print(f"[WARN] Failed to save keypoint visualization for {img_path}: {e}")
 
         # If no gt_keypoints, run MMPose to get COCO-17 and convert to BODY_25
         if keypoints_2d is None or (hasattr(keypoints_2d, 'size') and keypoints_2d.size == 0):
@@ -198,8 +266,11 @@ def main(args):
             processed_data["center"].append(coco_data["center"][i])
             processed_data["scale"].append(coco_data["scale"][i])
             processed_data["cam_int"].append(coco_data["cam_int"][i])
+            # Always append to gt_keypoints to keep lengths consistent
             if keypoints_2d is not None:
                 processed_data["gt_keypoints"].append(keypoints_2d)
+            else:
+                processed_data["gt_keypoints"].append(None)
             processed_data["cam_t"].append(result["camera_translation"].detach().cpu().numpy())
             processed_data["shape"].append(result["betas"][0].detach().cpu().numpy())
 
@@ -228,7 +299,9 @@ if __name__ == "__main__":
     parser.add_argument("--loss_cut", type=int, default=100, required=False, help="If initial loss is more than 100 we use high loss threshold else low loss threshold")
     parser.add_argument("--high_threshold", type=int, default=50, required=False, help="Loss threshold value to select the optimization result")
     parser.add_argument("--low_threshold", type=int, default=30, required=False, help="Loss threshold value to select the optimization result")
+    parser.add_argument("--save_dense_kp_dir", type=str, default=None, help="Directory to save keypoints")
 
+    start_gradio(host='0.0.0.0', port=7860)
     args = parser.parse_args()
     main(args)
 

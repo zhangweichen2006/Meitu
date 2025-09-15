@@ -42,10 +42,11 @@ def main(args):
         if "gt_keypoints" in coco_data:
             keypoints_2d = coco_data["gt_keypoints"][i]
         else:
+            processed_data["gt_keypoints"] = []
             keypoints_2d = None
 
-        # Optionally render and save provided keypoints
-        if args.save_dense_kp_dir is not None and ("gt_keypoints" in coco_data):
+        # Optionally render and save provided keypoints and dense keypoints
+        if args.save_dense_kp_dir is not None:
             try:
                 img_bgr = cv2.imread(img_path) if os.path.exists(img_path) else None
                 if img_bgr is None:
@@ -53,21 +54,43 @@ def main(args):
                     if alt and os.path.exists(alt):
                         img_bgr = cv2.imread(alt)
                 if img_bgr is not None:
-                    kps = coco_data["gt_keypoints"][i]
-                    if hasattr(kps, 'shape') and kps.shape[-1] >= 2:
+                    stem = os.path.splitext(os.path.basename(img_path))[0]
+                    
+                    # Visualize GT keypoints if available
+                    if "gt_keypoints" in coco_data:
+                        kps = coco_data["gt_keypoints"][i]
+                        if hasattr(kps, 'shape') and kps.shape[-1] >= 2:
+                            vis_img = img_bgr.copy()
+                            for (x, y, c) in kps:
+                                if c is None:
+                                    continue
+                                try:
+                                    conf = float(c)
+                                except Exception:
+                                    conf = 1.0
+                                color = (0, 255, 0) if conf >= 0.5 else (0, 165, 255)
+                                cv2.circle(vis_img, (int(x), int(y)), 3, color, thickness=-1)
+                            out_path = os.path.join(args.save_dense_kp_dir, f"{stem}_gt_kp.png")
+                            cv2.imwrite(out_path, vis_img)
+                    
+                    # Visualize dense keypoints
+                    if dense_kp is not None and hasattr(dense_kp, 'shape') and len(dense_kp.shape) >= 2:
                         vis_img = img_bgr.copy()
-                        for (x, y, c) in kps:
-                            if c is None:
-                                continue
-                            try:
-                                conf = float(c)
-                            except Exception:
-                                conf = 1.0
-                            color = (0, 255, 0) if conf >= 0.5 else (0, 165, 255)
-                            cv2.circle(vis_img, (int(x), int(y)), 3, color, thickness=-1)
-                        stem = os.path.splitext(os.path.basename(img_path))[0]
-                        out_path = os.path.join(args.save_dense_kp_dir, f"{stem}_kp.png")
-                        cv2.imwrite(out_path, vis_img)
+                        # Convert BGR to RGB for visualization function
+                        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+                        
+                        # Use the new visualization function from tools.vis
+                        import sys
+                        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+                        from tools.vis import vis_dense_kp
+                        
+                        vis_img_rgb = vis_dense_kp(img_rgb, dense_kp, conf_threshold=0.3, point_size=3)
+                        vis_img_bgr = cv2.cvtColor(vis_img_rgb, cv2.COLOR_RGB2BGR)
+                        
+                        out_path = os.path.join(args.save_dense_kp_dir, f"{stem}_dense_kp.png")
+                        cv2.imwrite(out_path, vis_img_bgr)
+                        print(f"Saved dense keypoints visualization: {out_path}")
+                        
             except Exception as e:
                 print(f"[WARN] Failed to save keypoint visualization for {img_path}: {e}")
 

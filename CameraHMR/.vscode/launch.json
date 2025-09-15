@@ -11,14 +11,17 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "env": {
-                "CUDA_VISIBLE_DEVICES": "1",
+                "CUDA_VISIBLE_DEVICES": "0",
                 // "PYOPENGL_PLATFORM": "egl",
-                "PYOPENGL_PLATFORM": "osmesa",
+                // "PYOPENGL_PLATFORM": "osmesa",
             },
-            "args": ["--vis", "False", "--save_vis_dir", "out/out_camsmplify", "--input", "out/out_demo_opt_cam/init.npz", "--output_dir", "out/out_camsmplify_params"]
+            "args": ["--vis", "False", "--save_vis_dir", "outputs/meitu_test_camsmplify", "--input", "outputs/meitu_test/test.npz", "--output_dir", "outputs/meitu_test_camsmplify_params", "--save_dense_kp_dir", "outputs/meitu_test_camsmplify_dense_kp"]
         }
     ]
 }
+
+
+// "args": ["--image_folder", "../data/test_data_img/fixed", "--output_folder", "outputs/meitu_test", "--output_cam", "outputs/meitu_test_cam" ,"--export_init_npz","outputs/meitu_test/test.npz"]
 
 // "args": ["--vis", "False", "--save_vis_dir", "outputs/meitu_test_camsmplify", "--input", "outputs/meitu_test_cam/test.npz", "--output_dir", "outputs/meitu_test_camsmplify_params"]
 
