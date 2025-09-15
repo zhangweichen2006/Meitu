@@ -160,7 +160,6 @@ def main(args):
             try:
                 # Load with alpha if present; keep BGR/BGRA for drawing
                 img_rgb = read_img(img_path) if os.path.exists(img_path) else None
-                vis_img(img_rgb)
                 if img_rgb is None:
                     alt = coco_data["imgname"][i] if "imgname" in coco_data else None
                     if alt and os.path.exists(alt):
@@ -205,6 +204,7 @@ def main(args):
                                 pass
                         stem = os.path.splitext(os.path.basename(img_path))[0]
                         out_path = os.path.join(args.save_dense_kp_dir, f"{stem}_kp.png")
+                        vis_img(saved_img)
                         # Convert to BGR/BGRA for cv2.imwrite and ensure uint8
                         vis_img_u8 = np.clip(saved_img, 0, 255).astype(np.uint8)
                         if len(vis_img_u8.shape) == 3 and vis_img_u8.shape[2] == 4:
