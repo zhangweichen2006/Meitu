@@ -528,7 +528,8 @@ class CameraHMR(pl.LightningModule):
         # val_mrpe = error_trans.mean(-1)
         val_mpjpe = error.mean(-1)*1000
         val_pve = error_verts.mean(-1)*1000
-        val_pampjpe = torch.tensor(r_error.mean(-1))*1000
+        # Ensure tensor is on the same device for DDP reduction (NCCL requires CUDA tensors)
+        val_pampjpe = torch.as_tensor(r_error.mean(-1), device=self.device) * 1000
 
         avgpck_005 = pck1
         avgpck_01 = pck2

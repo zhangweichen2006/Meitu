@@ -11,14 +11,15 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "env": {
-                "CUDA_VISIBLE_DEVICES": "0",
-                // "PYOPENGL_PLATFORM": "egl",
-                // "PYOPENGL_PLATFORM": "osmesa",
+                "CUDA_VISIBLE_DEVICES": "5,6",
+                "PYOPENGL_PLATFORM": "egl",
+                "LIBGL_ALWAYS_SOFTWARE": "1"
             },
-            "args": ["data=bedlam_only", "experiment=camerahmr", "exp_name=train_bedrun1"]
+            "args": ["data=bedlam_only", "experiment=camerahmr", "exp_name=train_bedrun1", "trainer.devices=2"]
         }
     ]
 }
+// python train.py data=bedlam_only experiment=camerahmr exp_name=train_bedrun1 trainer.devices=2
 // "args": ["--vis", "False", "--save_vis_dir", "out_camsmplify"]
 // "args": ["--vis", "False", "--save_vis_dir", "out_camsmplify", "--input", "out_demo_opt_cam/init.npz", "--output_dir", "out_camsmplify_params"]
 

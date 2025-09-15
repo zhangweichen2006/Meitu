@@ -2,11 +2,11 @@
 urle () { [[ "${1}" ]] || return 1; local LANG=C i x; for (( i = 0; i < ${#1}; i++ )); do x="${1:i:1}"; [[ "${x}" == [a-zA-Z0-9.~-] ]] && echo -n "${x}" || printf '%%%02X' "'${x}"; done; echo; }
 
 # BEDLAM checkpoints
-echo -e "\nYou need to register at https://bedlam.is.tue.mpg.de/"
-read -p "Username (BEDLAM):" username
-read -p "Password (BEDLAM):" password
-username=$(urle $username)
-password=$(urle $password)
+# echo -e "\nYou need to register at https://bedlam.is.tue.mpg.de/"
+# read -p "Username (BEDLAM):" username
+# read -p "Password (BEDLAM):" password
+# username=$(urle $username)
+# password=$(urle $password)
 
 # mkdir -p data/training-images
 # wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&resume=1&sfile=bedlam_images_train/20221010_3-10_500_batch01hand_zoom_suburb_d_6fps.tar' -O './data/training-images/20221010_3-10_500_batch01hand_zoom_suburb_d_6fps.tar' --no-check-certificate --continue
@@ -35,7 +35,7 @@ password=$(urle $password)
 # wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&resume=1&sfile=bedlam_images_train/20221022_3_250_batch01handhair_static_bigOffice_30fps.tar' -O './data/training-images/20221022_3_250_batch01handhair_static_bigOffice_30fps.tar' --no-check-certificate --continue
 # wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&resume=1&sfile=bedlam_images_train/20221024_10_100_batch01handhair_zoom_suburb_d_30fps.tar' -O './data/training-images/20221024_10_100_batch01handhair_zoom_suburb_d_30fps.tar' --no-check-certificate --continue
 # wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&resume=1&sfile=bedlam_images_train/20221024_3-10_100_batch01handhair_static_highSchoolGym_30fps.tar' -O './data/training-images/20221024_3-10_100_batch01handhair_static_highSchoolGym_30fps.tar' --no-check-certificate --continue
-wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&resume=1&sfile=bedlam_images_train/agora_images.tar' -O './data/training-images/agora_images.tar' --no-check-certificate --continue
+# wget --post-data "username=$username&password=$password" 'https://download.is.tue.mpg.de/download.php?domain=bedlam&resume=1&sfile=bedlam_images_train/agora_images.tar' -O './data/training-images/agora_images.tar' --no-check-certificate --continue
 for file in data/training-images/*.tar; do
     tar -xvf "$file" -C data/training-images/
 done

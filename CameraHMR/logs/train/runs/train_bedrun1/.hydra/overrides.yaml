@@ -1,0 +1,4 @@
+- data=bedlam_only
+- experiment=camerahmr
+- exp_name=train_bedrun1
+- trainer.devices=2
