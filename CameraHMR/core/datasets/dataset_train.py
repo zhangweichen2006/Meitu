@@ -32,21 +32,21 @@ class DatasetTrain(Dataset):
             'replicate': cv2.BORDER_REPLICATE,
         }[cfg.DATASETS.get('BORDER_MODE', 'constant')]
 
-        self.img_dir = DATASET_FOLDERS[dataset] 
+        self.img_dir = DATASET_FOLDERS[dataset]
         self.data = np.load(DATASET_FILES[is_train][dataset], allow_pickle=True)
         self.imgname = self.data['imgname']
         self.scale = self.data['scale']
         self.center = self.data['center']
         if 'pose_cam' in self.data:
-            self.body_pose = self.data['pose_cam'][:, :NUM_PARAMS_SMPL*3].astype(np.float) #Change 24 
+            self.body_pose = self.data['pose_cam'][:, :NUM_PARAMS_SMPL*3].astype(np.float) #Change 24
         elif 'pose' in self.data:
-            self.body_pose = self.data['pose'][:, :NUM_PARAMS_SMPL*3].astype(np.float) #Change 24 
+            self.body_pose = self.data['pose'][:, :NUM_PARAMS_SMPL*3].astype(np.float) #Change 24
         else:
-            self.body_pose = np.zeros((len(self.imgname), NUM_PARAMS_SMPL*3), dtype=np.float32)  
+            self.body_pose = np.zeros((len(self.imgname), NUM_PARAMS_SMPL*3), dtype=np.float32)
 
         if self.body_pose.shape[1] == NUM_PARAMS_SMPL:
-            self.body_pose = self.body_pose.reshape(-1,NUM_PARAMS_SMPL*3)      
-        self.betas = self.data['shape'].astype(np.float)[:,:NUM_BETAS] 
+            self.body_pose = self.body_pose.reshape(-1,NUM_PARAMS_SMPL*3)
+        self.betas = self.data['shape'].astype(np.float)[:,:NUM_BETAS]
         self.cam_int = self.data['cam_int']
         self.keypoints = self.data['gtkps'][:,:NUM_JOINTS]
         self.length = self.scale.shape[0]
@@ -61,6 +61,30 @@ class DatasetTrain(Dataset):
         else:
             self.trans_cam = np.zeros((self.imgname.shape[0],3))
         log.info(f'Loaded {self.dataset} dataset, num samples {self.length}')
+
+        # Filter out entries where the corresponding image file doesn't exist
+        img_paths = [os.path.join(self.img_dir, str(p)) for p in self.imgname]
+        valid_paths = np.array([os.path.isfile(p) for p in img_paths])
+        if not valid_paths.all():
+            num_missing = int((~valid_paths).sum())
+            log.warning(f"{self.dataset}: {num_missing} missing images. Skipping those samples.")
+            # Apply mask to all per-sample arrays
+            self.imgname = self.imgname[valid_paths]
+            self.scale = self.scale[valid_paths]
+            self.center = self.center[valid_paths]
+            if isinstance(self.body_pose, np.ndarray) and len(self.body_pose) == self.length:
+                self.body_pose = self.body_pose[valid_paths]
+            if isinstance(self.betas, np.ndarray) and len(self.betas) == self.length:
+                self.betas = self.betas[valid_paths]
+            if isinstance(self.cam_int, np.ndarray) and len(self.cam_int) == self.length:
+                self.cam_int = self.cam_int[valid_paths]
+            if isinstance(self.keypoints, np.ndarray) and len(self.keypoints) == self.length:
+                self.keypoints = self.keypoints[valid_paths]
+            if isinstance(self.cam_ext, np.ndarray) and len(self.cam_ext) == self.length:
+                self.cam_ext = self.cam_ext[valid_paths]
+            if isinstance(self.trans_cam, np.ndarray) and len(self.trans_cam) == self.length:
+                self.trans_cam = self.trans_cam[valid_paths]
+            self.length = self.scale.shape[0]
 
     def __getitem__(self, index):
         item = {}
@@ -130,5 +154,4 @@ class DatasetTrain(Dataset):
 
     def __len__(self):
         return int(len(self.imgname))
-        
-       
+

@@ -10,7 +10,6 @@ DATASET_FOLDERS = {
     'emdb-smpl': os.path.join(base_dir, 'data/test-images/EMDB'),
     'spec-test-smpl': os.path.join(base_dir, 'data/test-images/spec-syn'),
     'rich-smplx': os.path.join(base_dir, 'data/test-images/RICH'),
-    'coco-val-smpl': os.path.join(base_dir, 'data/test-images/COCO2017/images'),
 
     'insta-1': os.path.join(base_dir, 'data/training-images/insta/images/'),
     'insta-2': os.path.join(base_dir, 'data/training-images/insta/images'),
@@ -64,6 +63,7 @@ DATASET_FILES = [
         'zoom-suburbd-bbox44': os.path.join(base_dir, 'data/training-labels/bedlam-labels/20221010_3-10_500_batch01hand_zoom_suburb_d_6fps.npz'),
     },
     {
+        'emdb-smpl': os.path.join(base_dir, 'data/test-labels/emdb_test.npz'),
         'aic': os.path.join(base_dir, 'data//training-labels/aic-release.npz'),
         'insta-1': os.path.join(base_dir, 'data//training-labels/insta1-release.npz'),
         'insta-2': os.path.join(base_dir, 'data//training-labels/insta2-release.npz'),
@@ -111,12 +111,12 @@ _C = CN(new_allowed=True)
 _C.GENERAL = CN(new_allowed=True)
 _C.GENERAL.RESUME = True
 _C.GENERAL.TIME_TO_RUN = 3300
-_C.GENERAL.VAL_STEPS = 100
+_C.GENERAL.VAL_STEPS = 10000
 _C.GENERAL.LOG_STEPS = 100
 _C.GENERAL.CHECKPOINT_STEPS = 20000
 _C.GENERAL.CHECKPOINT_DIR = "checkpoints"
 _C.GENERAL.SUMMARY_DIR = "tensorboard"
-_C.GENERAL.NUM_GPUS = 1
+_C.GENERAL.NUM_GPUS = 2
 _C.GENERAL.NUM_WORKERS = 4
 _C.GENERAL.MIXED_PRECISION = True
 _C.GENERAL.ALLOW_CUDA = True

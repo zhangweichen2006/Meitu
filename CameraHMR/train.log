@@ -1088,3 +1088,518 @@ Original Traceback (most recent call last):
 TypeError: 'NoneType' object is not subscriptable
 
 [2025-09-12 15:39:12,991][core.utils.misc][INFO] - Closing loggers...
+[2025-09-15 10:09:03,032][__main__][INFO] - Logging hyperparameters!
+[2025-09-15 10:09:08,860][core.datasets.dataset_train][INFO] - Loaded agora-body-bbox44 dataset, num samples 82265
+[2025-09-15 10:09:09,100][core.datasets.dataset_train][INFO] - Loaded static-hdri-bbox44 dataset, num samples 89741
+[2025-09-15 10:09:09,311][core.datasets.dataset_train][INFO] - Loaded zoom-suburbd-bbox44 dataset, num samples 77526
+[2025-09-15 10:09:09,355][core.datasets.dataset_train][INFO] - Loaded closeup-suburba-bbox44 dataset, num samples 8959
+[2025-09-15 10:09:09,399][core.datasets.dataset_train][INFO] - Loaded closeup-suburbb-bbox44 dataset, num samples 8448
+[2025-09-15 10:09:09,436][core.datasets.dataset_train][INFO] - Loaded closeup-suburbc-bbox44 dataset, num samples 8801
+[2025-09-15 10:09:09,475][core.datasets.dataset_train][INFO] - Loaded closeup-suburbd-bbox44 dataset, num samples 8457
+[2025-09-15 10:09:09,539][core.datasets.dataset_train][INFO] - Loaded closeup-gym-bbox44 dataset, num samples 17135
+[2025-09-15 10:09:09,761][core.datasets.dataset_train][INFO] - Loaded zoom-gym-bbox44 dataset, num samples 72104
+[2025-09-15 10:09:09,985][core.datasets.dataset_train][INFO] - Loaded static-gym-bbox44 dataset, num samples 83185
+[2025-09-15 10:09:10,065][core.datasets.dataset_train][INFO] - Loaded static-office-bbox44 dataset, num samples 21991
+[2025-09-15 10:09:10,135][core.datasets.dataset_train][INFO] - Loaded orbit-office-bbox44 dataset, num samples 21852
+[2025-09-15 10:09:10,360][core.datasets.dataset_train][INFO] - Loaded static-hdri-zoomed-bbox44 dataset, num samples 86660
+[2025-09-15 10:09:10,460][core.datasets.dataset_train][INFO] - Loaded pitchup-stadium-bbox44 dataset, num samples 36325
+[2025-09-15 10:09:10,559][core.datasets.dataset_train][INFO] - Loaded pitchdown-stadium-bbox44 dataset, num samples 36889
+[2025-09-15 10:09:10,632][core.datasets.dataset_train][INFO] - Loaded static-hdri-bmi-bbox44 dataset, num samples 22749
+[2025-09-15 10:09:10,670][core.datasets.dataset_train][INFO] - Loaded closeup-suburbb-bmi-bbox44 dataset, num samples 8769
+[2025-09-15 10:09:10,710][core.datasets.dataset_train][INFO] - Loaded closeup-suburbc-bmi-bbox44 dataset, num samples 8245
+[2025-09-15 10:09:11,074][core.datasets.dataset_train][INFO] - Loaded static-suburbd-bmi-bbox44 dataset, num samples 150860
+[2025-09-15 10:09:11,189][core.datasets.dataset_train][INFO] - Loaded zoom-gym-bmi-bbox44 dataset, num samples 31019
+[2025-09-15 10:09:11,256][core.datasets.dataset_train][INFO] - Loaded static-office-hair-bbox44 dataset, num samples 21731
+[2025-09-15 10:09:11,326][core.datasets.dataset_train][INFO] - Loaded zoom-suburbd-hair-bbox44 dataset, num samples 23017
+[2025-09-15 10:09:11,386][core.datasets.dataset_train][INFO] - Loaded static-gym-hair-bbox44 dataset, num samples 17553
+[2025-09-15 10:09:11,456][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-15-bbox44 dataset, num samples 22305
+[2025-09-15 10:09:11,547][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-19-bbox44 dataset, num samples 22623
+[2025-09-15 10:09:11,617][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-12-bbox44 dataset, num samples 22569
+[2025-09-15 10:09:11,678][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-10-bbox44 dataset, num samples 21825
+[2025-09-15 10:09:18,862][core.datasets.dataset_val][INFO] - Loaded zoom-suburbd-bbox44 dataset, num samples 77526
+[2025-09-15 10:35:21,632][core.utils.misc][ERROR] - 
+Traceback (most recent call last):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1251, in _try_get_data
+    data = self._data_queue.get(timeout=timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/multiprocessing/queues.py", line 113, in get
+    if not self._poll(timeout):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/multiprocessing/connection.py", line 257, in poll
+    return self._poll(timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/multiprocessing/connection.py", line 424, in _poll
+    r = wait([self], timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/multiprocessing/connection.py", line 931, in wait
+    ready = selector.select(timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/selectors.py", line 416, in select
+    fd_event_list = self._selector.poll(timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/_utils/signal_handling.py", line 73, in handler
+    _error_if_any_worker_fails()
+RuntimeError: DataLoader worker (pid 3915578) is killed by signal: Terminated. 
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 48, in _call_and_handle_interrupt
+    return trainer.strategy.launcher.launch(trainer_fn, *args, trainer=trainer, **kwargs)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/launchers/subprocess_script.py", line 105, in launch
+    return function(*args, **kwargs)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 599, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1012, in _run
+    results = self._run_stage()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1056, in _run_stage
+    self.fit_loop.run()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 216, in run
+    self.advance()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 455, in advance
+    self.epoch_loop.run(self._data_fetcher)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 152, in run
+    self.advance(data_fetcher)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 310, in advance
+    batch, _, __ = next(data_fetcher)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fetchers.py", line 134, in __next__
+    batch = super().__next__()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fetchers.py", line 61, in __next__
+    batch = next(self.iterator)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/utilities/combined_loader.py", line 341, in __next__
+    out = next(self._iterator)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/utilities/combined_loader.py", line 78, in __next__
+    out[i] = next(self.iterators[i])
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 708, in __next__
+    data = self._next_data()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1458, in _next_data
+    idx, data = self._get_data()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1420, in _get_data
+    success, data = self._try_get_data()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1264, in _try_get_data
+    raise RuntimeError(
+RuntimeError: DataLoader worker (pid(s) 3915578, 3915584) exited unexpectedly
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/logging/__init__.py", line 1732, in isEnabledFor
+    return self._cache[level]
+KeyError: 10
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/core/utils/misc.py", line 39, in wrap
+    ret = task_func(cfg=cfg)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/train.py", line 99, in train
+    trainer.fit(model, datamodule=datamodule, ckpt_path='last')
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 561, in fit
+    call._call_and_handle_interrupt(
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 70, in _call_and_handle_interrupt
+    trainer._teardown()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1035, in _teardown
+    self.strategy.teardown()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/ddp.py", line 419, in teardown
+    super().teardown()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/parallel.py", line 134, in teardown
+    super().teardown()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/strategy.py", line 535, in teardown
+    log.debug(f"{self.__class__.__name__}: moving model to CPU")
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/logging/__init__.py", line 1464, in debug
+    if self.isEnabledFor(DEBUG):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/logging/__init__.py", line 1734, in isEnabledFor
+    _acquireLock()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/logging/__init__.py", line 219, in _acquireLock
+    def _acquireLock():
+  File "/root/.cursor-server/extensions/ms-python.debugpy-2025.10.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_trace_dispatch_regular.py", line 354, in __call__
+    def __call__(self, frame, event, arg):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/_utils/signal_handling.py", line 73, in handler
+    _error_if_any_worker_fails()
+RuntimeError: DataLoader worker (pid 3902400) is killed by signal: Terminated. 
+[2025-09-15 10:35:21,655][core.utils.misc][INFO] - Closing loggers...
+[2025-09-15 10:35:57,776][__main__][INFO] - Logging hyperparameters!
+[2025-09-15 10:37:33,419][__main__][INFO] - Logging hyperparameters!
+[2025-09-15 10:37:34,193][core.datasets.dataset_train][INFO] - Loaded emdb-smpl dataset, num samples 24117
+[2025-09-15 10:37:41,439][core.datasets.dataset_val][INFO] - Loaded emdb-smpl dataset, num samples 24117
+[2025-09-15 12:04:16,115][__main__][INFO] - Logging hyperparameters!
+[2025-09-15 12:04:18,213][core.datasets.dataset_train][INFO] - Loaded emdb-smpl dataset, num samples 24117
+[2025-09-15 12:04:25,198][core.datasets.dataset_val][INFO] - Loaded emdb-smpl dataset, num samples 24117
+[2025-09-15 12:10:16,675][__main__][INFO] - Logging hyperparameters!
+[2025-09-15 12:10:17,664][core.datasets.dataset_train][INFO] - Loaded emdb-smpl dataset, num samples 24117
+[2025-09-15 12:10:24,765][core.datasets.dataset_val][INFO] - Loaded emdb-smpl dataset, num samples 24117
+[2025-09-15 14:48:14,368][__main__][INFO] - Logging hyperparameters!
+[2025-09-15 14:48:16,126][core.datasets.dataset_train][INFO] - Loaded agora-body-bbox44 dataset, num samples 82265
+[2025-09-15 14:48:16,395][core.datasets.dataset_train][INFO] - Loaded static-hdri-bbox44 dataset, num samples 89741
+[2025-09-15 14:48:16,601][core.datasets.dataset_train][INFO] - Loaded zoom-suburbd-bbox44 dataset, num samples 77526
+[2025-09-15 14:48:16,644][core.datasets.dataset_train][INFO] - Loaded closeup-suburba-bbox44 dataset, num samples 8959
+[2025-09-15 14:48:16,683][core.datasets.dataset_train][INFO] - Loaded closeup-suburbb-bbox44 dataset, num samples 8448
+[2025-09-15 14:48:16,733][core.datasets.dataset_train][INFO] - Loaded closeup-suburbc-bbox44 dataset, num samples 8801
+[2025-09-15 14:48:16,772][core.datasets.dataset_train][INFO] - Loaded closeup-suburbd-bbox44 dataset, num samples 8457
+[2025-09-15 14:48:16,829][core.datasets.dataset_train][INFO] - Loaded closeup-gym-bbox44 dataset, num samples 17135
+[2025-09-15 14:48:17,031][core.datasets.dataset_train][INFO] - Loaded zoom-gym-bbox44 dataset, num samples 72104
+[2025-09-15 14:48:17,286][core.datasets.dataset_train][INFO] - Loaded static-gym-bbox44 dataset, num samples 83185
+[2025-09-15 14:48:17,354][core.datasets.dataset_train][INFO] - Loaded static-office-bbox44 dataset, num samples 21991
+[2025-09-15 14:48:17,427][core.datasets.dataset_train][INFO] - Loaded orbit-office-bbox44 dataset, num samples 21852
+[2025-09-15 14:48:17,676][core.datasets.dataset_train][INFO] - Loaded static-hdri-zoomed-bbox44 dataset, num samples 86660
+[2025-09-15 14:48:17,774][core.datasets.dataset_train][INFO] - Loaded pitchup-stadium-bbox44 dataset, num samples 36325
+[2025-09-15 14:48:17,877][core.datasets.dataset_train][INFO] - Loaded pitchdown-stadium-bbox44 dataset, num samples 36889
+[2025-09-15 14:48:17,942][core.datasets.dataset_train][INFO] - Loaded static-hdri-bmi-bbox44 dataset, num samples 22749
+[2025-09-15 14:48:17,983][core.datasets.dataset_train][INFO] - Loaded closeup-suburbb-bmi-bbox44 dataset, num samples 8769
+[2025-09-15 14:48:18,021][core.datasets.dataset_train][INFO] - Loaded closeup-suburbc-bmi-bbox44 dataset, num samples 8245
+[2025-09-15 14:48:18,374][core.datasets.dataset_train][INFO] - Loaded static-suburbd-bmi-bbox44 dataset, num samples 150860
+[2025-09-15 14:48:18,466][core.datasets.dataset_train][INFO] - Loaded zoom-gym-bmi-bbox44 dataset, num samples 31019
+[2025-09-15 14:48:18,526][core.datasets.dataset_train][INFO] - Loaded static-office-hair-bbox44 dataset, num samples 21731
+[2025-09-15 14:48:18,597][core.datasets.dataset_train][INFO] - Loaded zoom-suburbd-hair-bbox44 dataset, num samples 23017
+[2025-09-15 14:48:18,660][core.datasets.dataset_train][INFO] - Loaded static-gym-hair-bbox44 dataset, num samples 17553
+[2025-09-15 14:48:18,745][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-15-bbox44 dataset, num samples 22305
+[2025-09-15 14:48:18,812][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-19-bbox44 dataset, num samples 22623
+[2025-09-15 14:48:18,881][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-12-bbox44 dataset, num samples 22569
+[2025-09-15 14:48:18,948][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-10-bbox44 dataset, num samples 21825
+[2025-09-15 14:48:25,959][core.datasets.dataset_val][INFO] - Loaded zoom-suburbd-bbox44 dataset, num samples 77526
+[2025-09-15 14:49:55,107][core.utils.misc][ERROR] - 
+Traceback (most recent call last):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1251, in _try_get_data
+    data = self._data_queue.get(timeout=timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/multiprocessing/queues.py", line 113, in get
+    if not self._poll(timeout):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/multiprocessing/connection.py", line 257, in poll
+    return self._poll(timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/multiprocessing/connection.py", line 424, in _poll
+    r = wait([self], timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/multiprocessing/connection.py", line 931, in wait
+    ready = selector.select(timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/selectors.py", line 416, in select
+    fd_event_list = self._selector.poll(timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/_utils/signal_handling.py", line 73, in handler
+    _error_if_any_worker_fails()
+RuntimeError: DataLoader worker (pid 4032604) is killed by signal: Terminated. 
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 48, in _call_and_handle_interrupt
+    return trainer.strategy.launcher.launch(trainer_fn, *args, trainer=trainer, **kwargs)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/launchers/subprocess_script.py", line 105, in launch
+    return function(*args, **kwargs)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 599, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1012, in _run
+    results = self._run_stage()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1056, in _run_stage
+    self.fit_loop.run()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 216, in run
+    self.advance()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 455, in advance
+    self.epoch_loop.run(self._data_fetcher)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 152, in run
+    self.advance(data_fetcher)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 310, in advance
+    batch, _, __ = next(data_fetcher)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fetchers.py", line 134, in __next__
+    batch = super().__next__()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fetchers.py", line 61, in __next__
+    batch = next(self.iterator)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/utilities/combined_loader.py", line 341, in __next__
+    out = next(self._iterator)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/utilities/combined_loader.py", line 78, in __next__
+    out[i] = next(self.iterators[i])
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 708, in __next__
+    data = self._next_data()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1458, in _next_data
+    idx, data = self._get_data()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1420, in _get_data
+    success, data = self._try_get_data()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1264, in _try_get_data
+    raise RuntimeError(
+RuntimeError: DataLoader worker (pid(s) 4032604, 4032636) exited unexpectedly
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/core/utils/misc.py", line 39, in wrap
+    ret = task_func(cfg=cfg)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/train.py", line 99, in train
+    trainer.fit(model, datamodule=datamodule, ckpt_path='last')
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 561, in fit
+    call._call_and_handle_interrupt(
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 70, in _call_and_handle_interrupt
+    trainer._teardown()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1035, in _teardown
+    self.strategy.teardown()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/ddp.py", line 419, in teardown
+    super().teardown()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/parallel.py", line 134, in teardown
+    super().teardown()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/strategy.py", line 536, in teardown
+    self.lightning_module.cpu()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/lightning_fabric/utilities/device_dtype_mixin.py", line 81, in cpu
+    _update_properties(self, device=torch.device("cpu"))
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/lightning_fabric/utilities/device_dtype_mixin.py", line 112, in _update_properties
+    for module in root.modules():
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2772, in modules
+    for _, module in self.named_modules():
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2820, in named_modules
+    yield from module.named_modules(
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2820, in named_modules
+    yield from module.named_modules(
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2820, in named_modules
+    yield from module.named_modules(
+  [Previous line repeated 4 more times]
+  File "/root/.cursor-server/extensions/ms-python.debugpy-2025.10.0-linux-x64/bundled/libs/debugpy/_vendored/pydevd/_pydevd_bundle/pydevd_trace_dispatch_regular.py", line 354, in __call__
+    def __call__(self, frame, event, arg):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/_utils/signal_handling.py", line 73, in handler
+    _error_if_any_worker_fails()
+RuntimeError: DataLoader worker (pid 4031781) is killed by signal: Terminated. 
+[2025-09-15 14:49:55,124][core.utils.misc][INFO] - Closing loggers...
+[2025-09-15 15:49:55,579][__main__][INFO] - Logging hyperparameters!
+[2025-09-15 15:49:57,453][core.datasets.dataset_train][INFO] - Loaded agora-body-bbox44 dataset, num samples 82265
+[2025-09-15 15:49:59,528][core.datasets.dataset_train][INFO] - Loaded static-hdri-bbox44 dataset, num samples 89741
+[2025-09-15 15:56:30,951][core.datasets.dataset_train][INFO] - Loaded zoom-suburbd-bbox44 dataset, num samples 77526
+[2025-09-15 15:58:45,367][core.datasets.dataset_train][INFO] - Loaded closeup-suburba-bbox44 dataset, num samples 8959
+[2025-09-15 16:00:19,245][core.datasets.dataset_train][INFO] - Loaded closeup-suburbb-bbox44 dataset, num samples 8448
+[2025-09-15 16:01:45,958][core.datasets.dataset_train][INFO] - Loaded closeup-suburbc-bbox44 dataset, num samples 8801
+[2025-09-15 16:03:14,163][core.datasets.dataset_train][INFO] - Loaded closeup-suburbd-bbox44 dataset, num samples 8457
+[2025-09-15 16:04:25,529][core.datasets.dataset_train][INFO] - Loaded closeup-gym-bbox44 dataset, num samples 17135
+[2025-09-15 16:06:44,609][core.datasets.dataset_train][INFO] - Loaded zoom-gym-bbox44 dataset, num samples 72104
+[2025-09-15 16:16:28,473][core.datasets.dataset_train][WARNING] - zoom-gym-bbox44: 47055 missing images. Skipping those samples.
+[2025-09-15 16:16:28,695][core.datasets.dataset_train][INFO] - Loaded static-gym-bbox44 dataset, num samples 83185
+[2025-09-15 16:17:13,456][core.datasets.dataset_train][INFO] - Loaded static-office-bbox44 dataset, num samples 21991
+[2025-09-15 16:17:36,012][core.datasets.dataset_train][INFO] - Loaded orbit-office-bbox44 dataset, num samples 21852
+[2025-09-15 16:17:58,530][core.datasets.dataset_train][INFO] - Loaded static-hdri-zoomed-bbox44 dataset, num samples 86660
+[2025-09-15 16:19:29,118][core.datasets.dataset_train][INFO] - Loaded pitchup-stadium-bbox44 dataset, num samples 36325
+[2025-09-15 16:19:52,128][core.datasets.dataset_train][INFO] - Loaded pitchdown-stadium-bbox44 dataset, num samples 36889
+[2025-09-15 16:20:14,721][core.datasets.dataset_train][INFO] - Loaded static-hdri-bmi-bbox44 dataset, num samples 22749
+[2025-09-15 16:20:38,363][core.datasets.dataset_train][INFO] - Loaded closeup-suburbb-bmi-bbox44 dataset, num samples 8769
+[2025-09-15 16:21:29,692][core.datasets.dataset_train][INFO] - Loaded closeup-suburbc-bmi-bbox44 dataset, num samples 8245
+[2025-09-15 16:22:52,381][core.datasets.dataset_train][INFO] - Loaded static-suburbd-bmi-bbox44 dataset, num samples 150860
+[2025-09-15 16:27:56,019][core.datasets.dataset_train][INFO] - Loaded zoom-gym-bmi-bbox44 dataset, num samples 31019
+[2025-09-15 16:29:11,141][core.datasets.dataset_train][INFO] - Loaded static-office-hair-bbox44 dataset, num samples 21731
+[2025-09-15 16:29:12,753][core.datasets.dataset_train][INFO] - Loaded zoom-suburbd-hair-bbox44 dataset, num samples 23017
+[2025-09-15 16:29:13,341][core.datasets.dataset_train][INFO] - Loaded static-gym-hair-bbox44 dataset, num samples 17553
+[2025-09-15 16:29:13,964][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-15-bbox44 dataset, num samples 22305
+[2025-09-15 16:30:27,908][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-19-bbox44 dataset, num samples 22623
+[2025-09-15 16:31:53,364][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-12-bbox44 dataset, num samples 22569
+[2025-09-15 16:33:17,493][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-10-bbox44 dataset, num samples 21825
+[2025-09-15 16:34:40,629][core.datasets.dataset_val][INFO] - Loaded zoom-suburbd-bbox44 dataset, num samples 77526
+[2025-09-15 19:17:40,556][core.utils.misc][ERROR] - 
+Traceback (most recent call last):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 48, in _call_and_handle_interrupt
+    return trainer.strategy.launcher.launch(trainer_fn, *args, trainer=trainer, **kwargs)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/launchers/subprocess_script.py", line 105, in launch
+    return function(*args, **kwargs)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 599, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1012, in _run
+    results = self._run_stage()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1056, in _run_stage
+    self.fit_loop.run()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 216, in run
+    self.advance()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 455, in advance
+    self.epoch_loop.run(self._data_fetcher)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 153, in run
+    self.on_advance_end(data_fetcher)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 398, in on_advance_end
+    self.val_loop.run()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/utilities.py", line 179, in _decorator
+    return loop_run(self, *args, **kwargs)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/evaluation_loop.py", line 138, in run
+    batch, batch_idx, dataloader_idx = next(data_fetcher)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fetchers.py", line 134, in __next__
+    batch = super().__next__()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fetchers.py", line 61, in __next__
+    batch = next(self.iterator)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/utilities/combined_loader.py", line 341, in __next__
+    out = next(self._iterator)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/utilities/combined_loader.py", line 142, in __next__
+    out = next(self.iterators[0])
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 708, in __next__
+    data = self._next_data()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1458, in _next_data
+    idx, data = self._get_data()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1420, in _get_data
+    success, data = self._try_get_data()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1251, in _try_get_data
+    data = self._data_queue.get(timeout=timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/multiprocessing/queues.py", line 113, in get
+    if not self._poll(timeout):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/multiprocessing/connection.py", line 257, in poll
+    return self._poll(timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/multiprocessing/connection.py", line 424, in _poll
+    r = wait([self], timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/multiprocessing/connection.py", line 931, in wait
+    ready = selector.select(timeout)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/selectors.py", line 416, in select
+    fd_event_list = self._selector.poll(timeout)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/core/utils/misc.py", line 39, in wrap
+    ret = task_func(cfg=cfg)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/train.py", line 99, in train
+    trainer.fit(model, datamodule=datamodule, ckpt_path='last')
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 561, in fit
+    call._call_and_handle_interrupt(
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 62, in _call_and_handle_interrupt
+    trainer._teardown()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1035, in _teardown
+    self.strategy.teardown()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/ddp.py", line 419, in teardown
+    super().teardown()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/parallel.py", line 134, in teardown
+    super().teardown()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/strategy.py", line 532, in teardown
+    _optimizers_to_device(self.optimizers, torch.device("cpu"))
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/lightning_fabric/utilities/optimizer.py", line 27, in _optimizers_to_device
+    _optimizer_to_device(opt, device)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/lightning_fabric/utilities/optimizer.py", line 41, in _optimizer_to_device
+    v[key] = move_data_to_device(val, device)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/lightning_fabric/utilities/apply_func.py", line 110, in move_data_to_device
+    return apply_to_collection(batch, dtype=_TransferableDataType, function=batch_to)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/lightning_utilities/core/apply_func.py", line 66, in apply_to_collection
+    return function(data, *args, **kwargs)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/lightning_fabric/utilities/apply_func.py", line 104, in batch_to
+    data_output = data.to(device, **kwargs)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/_utils/signal_handling.py", line 73, in handler
+    _error_if_any_worker_fails()
+RuntimeError: DataLoader worker (pid 179761) exited unexpectedly with exit code 1. Details are lost due to multiprocessing. Rerunning with num_workers=0 may give better error trace.
+[2025-09-15 19:17:40,590][core.utils.misc][INFO] - Closing loggers...
+[2025-09-15 19:31:14,520][__main__][INFO] - Logging hyperparameters!
+[2025-09-15 19:31:19,302][core.datasets.dataset_train][INFO] - Loaded agora-body-bbox44 dataset, num samples 82265
+[2025-09-15 19:31:21,799][core.datasets.dataset_train][INFO] - Loaded static-hdri-bbox44 dataset, num samples 89741
+[2025-09-15 20:52:11,393][core.datasets.dataset_train][INFO] - Loaded zoom-suburbd-bbox44 dataset, num samples 77526
+[2025-09-15 21:25:48,174][core.datasets.dataset_train][INFO] - Loaded closeup-suburba-bbox44 dataset, num samples 8959
+[2025-09-15 21:45:17,942][core.datasets.dataset_train][INFO] - Loaded closeup-suburbb-bbox44 dataset, num samples 8448
+[2025-09-15 22:03:42,041][core.datasets.dataset_train][INFO] - Loaded closeup-suburbc-bbox44 dataset, num samples 8801
+[2025-09-15 22:22:38,867][core.datasets.dataset_train][INFO] - Loaded closeup-suburbd-bbox44 dataset, num samples 8457
+[2025-09-15 22:39:59,351][core.datasets.dataset_train][INFO] - Loaded closeup-gym-bbox44 dataset, num samples 17135
+[2025-09-15 23:16:06,125][core.datasets.dataset_train][INFO] - Loaded zoom-gym-bbox44 dataset, num samples 72104
+[2025-09-15 23:42:44,326][core.datasets.dataset_train][WARNING] - zoom-gym-bbox44: 47055 missing images. Skipping those samples.
+[2025-09-15 23:42:44,543][core.datasets.dataset_train][INFO] - Loaded static-gym-bbox44 dataset, num samples 83185
+[2025-09-16 00:14:35,299][core.datasets.dataset_train][INFO] - Loaded static-office-bbox44 dataset, num samples 21991
+[2025-09-16 00:33:08,403][core.datasets.dataset_train][INFO] - Loaded orbit-office-bbox44 dataset, num samples 21852
+[2025-09-16 00:51:26,282][core.datasets.dataset_train][INFO] - Loaded static-hdri-zoomed-bbox44 dataset, num samples 86660
+[2025-09-16 01:33:55,342][core.datasets.dataset_train][INFO] - Loaded pitchup-stadium-bbox44 dataset, num samples 36325
+[2025-09-16 01:34:19,758][core.datasets.dataset_train][INFO] - Loaded pitchdown-stadium-bbox44 dataset, num samples 36889
+[2025-09-16 01:34:42,653][core.datasets.dataset_train][INFO] - Loaded static-hdri-bmi-bbox44 dataset, num samples 22749
+[2025-09-16 01:35:06,870][core.datasets.dataset_train][INFO] - Loaded closeup-suburbb-bmi-bbox44 dataset, num samples 8769
+[2025-09-16 01:35:34,641][core.datasets.dataset_train][INFO] - Loaded closeup-suburbc-bmi-bbox44 dataset, num samples 8245
+[2025-09-16 01:36:03,388][core.datasets.dataset_train][INFO] - Loaded static-suburbd-bmi-bbox44 dataset, num samples 150860
+[2025-09-16 01:37:37,235][core.datasets.dataset_train][INFO] - Loaded zoom-gym-bmi-bbox44 dataset, num samples 31019
+[2025-09-16 01:38:00,505][core.datasets.dataset_train][INFO] - Loaded static-office-hair-bbox44 dataset, num samples 21731
+[2025-09-16 01:38:00,756][core.datasets.dataset_train][INFO] - Loaded zoom-suburbd-hair-bbox44 dataset, num samples 23017
+[2025-09-16 01:38:00,965][core.datasets.dataset_train][INFO] - Loaded static-gym-hair-bbox44 dataset, num samples 17553
+[2025-09-16 01:38:01,318][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-15-bbox44 dataset, num samples 22305
+[2025-09-16 01:38:30,371][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-19-bbox44 dataset, num samples 22623
+[2025-09-16 01:39:52,644][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-12-bbox44 dataset, num samples 22569
+[2025-09-16 01:41:10,914][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-10-bbox44 dataset, num samples 21825
+[2025-09-16 01:42:37,609][core.datasets.dataset_val][INFO] - Loaded zoom-suburbd-bbox44 dataset, num samples 77526
+[2025-09-16 06:29:34,053][core.utils.misc][ERROR] - 
+Traceback (most recent call last):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/core/utils/misc.py", line 39, in wrap
+    ret = task_func(cfg=cfg)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/train.py", line 99, in train
+    trainer.fit(model, datamodule=datamodule, ckpt_path='last')
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 561, in fit
+    call._call_and_handle_interrupt(
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 48, in _call_and_handle_interrupt
+    return trainer.strategy.launcher.launch(trainer_fn, *args, trainer=trainer, **kwargs)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/strategies/launchers/subprocess_script.py", line 105, in launch
+    return function(*args, **kwargs)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 599, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1012, in _run
+    results = self._run_stage()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1056, in _run_stage
+    self.fit_loop.run()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 216, in run
+    self.advance()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 455, in advance
+    self.epoch_loop.run(self._data_fetcher)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 152, in run
+    self.advance(data_fetcher)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/training_epoch_loop.py", line 310, in advance
+    batch, _, __ = next(data_fetcher)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fetchers.py", line 134, in __next__
+    batch = super().__next__()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/loops/fetchers.py", line 61, in __next__
+    batch = next(self.iterator)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/utilities/combined_loader.py", line 341, in __next__
+    out = next(self._iterator)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/pytorch_lightning/utilities/combined_loader.py", line 78, in __next__
+    out[i] = next(self.iterators[i])
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 708, in __next__
+    data = self._next_data()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1455, in _next_data
+    return self._process_data(data)
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1505, in _process_data
+    data.reraise()
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/_utils.py", line 733, in reraise
+    raise exception
+TypeError: Caught TypeError in DataLoader worker process 10.
+Original Traceback (most recent call last):
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/_utils/worker.py", line 349, in _worker_loop
+    data = fetcher.fetch(index)  # type: ignore[possibly-undefined]
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 52, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 52, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/dry/envs/video_tryon/lib/python3.10/site-packages/torch/utils/data/dataset.py", line 350, in __getitem__
+    return self.datasets[dataset_idx][sample_idx]
+  File "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/core/datasets/dataset_train.py", line 105, in __getitem__
+    cv_img = cv_img[:, :, ::-1]
+TypeError: 'NoneType' object is not subscriptable
+
+[2025-09-16 06:29:34,063][core.utils.misc][INFO] - Closing loggers...
+[2025-09-16 13:06:28,619][__main__][INFO] - Logging hyperparameters!
+[2025-09-16 13:06:29,878][core.datasets.dataset_train][INFO] - Loaded emdb-smpl dataset, num samples 24117
+[2025-09-16 13:06:49,574][core.datasets.dataset_val][INFO] - Loaded emdb-smpl dataset, num samples 24117
+[2025-09-16 13:06:51,089][core.utils.misc][INFO] - Closing loggers...
+[2025-09-16 13:10:07,651][__main__][INFO] - Logging hyperparameters!
+[2025-09-16 13:10:09,144][core.datasets.dataset_train][INFO] - Loaded agora-body-bbox44 dataset, num samples 82265
+[2025-09-16 13:10:15,097][core.datasets.dataset_train][INFO] - Loaded static-hdri-bbox44 dataset, num samples 89741
+[2025-09-16 13:10:35,063][core.datasets.dataset_train][INFO] - Loaded zoom-suburbd-bbox44 dataset, num samples 77526
+[2025-09-16 13:10:45,053][core.datasets.dataset_train][INFO] - Loaded closeup-suburba-bbox44 dataset, num samples 8959
+[2025-09-16 13:10:51,132][core.datasets.dataset_train][INFO] - Loaded closeup-suburbb-bbox44 dataset, num samples 8448
+[2025-09-16 13:10:56,930][core.datasets.dataset_train][INFO] - Loaded closeup-suburbc-bbox44 dataset, num samples 8801
+[2025-09-16 13:11:02,799][core.datasets.dataset_train][INFO] - Loaded closeup-suburbd-bbox44 dataset, num samples 8457
+[2025-09-16 13:11:08,874][core.datasets.dataset_train][INFO] - Loaded closeup-gym-bbox44 dataset, num samples 17135
+[2025-09-16 13:11:20,214][core.datasets.dataset_train][INFO] - Loaded zoom-gym-bbox44 dataset, num samples 72104
+[2025-09-16 13:11:23,450][core.utils.misc][INFO] - Closing loggers...
+[2025-09-16 13:12:06,217][__main__][INFO] - Logging hyperparameters!
+[2025-09-16 13:12:07,698][core.datasets.dataset_train][INFO] - Loaded agora-body-bbox44 dataset, num samples 82265
+[2025-09-16 13:12:14,297][core.datasets.dataset_train][INFO] - Loaded static-hdri-bbox44 dataset, num samples 89741
+[2025-09-16 13:12:34,835][core.datasets.dataset_train][INFO] - Loaded zoom-suburbd-bbox44 dataset, num samples 77526
+[2025-09-16 13:12:44,924][core.datasets.dataset_train][INFO] - Loaded closeup-suburba-bbox44 dataset, num samples 8959
+[2025-09-16 13:12:51,289][core.datasets.dataset_train][INFO] - Loaded closeup-suburbb-bbox44 dataset, num samples 8448
+[2025-09-16 13:12:57,020][core.datasets.dataset_train][INFO] - Loaded closeup-suburbc-bbox44 dataset, num samples 8801
+[2025-09-16 13:13:02,794][core.datasets.dataset_train][INFO] - Loaded closeup-suburbd-bbox44 dataset, num samples 8457
+[2025-09-16 13:13:09,009][core.datasets.dataset_train][INFO] - Loaded closeup-gym-bbox44 dataset, num samples 17135
+[2025-09-16 13:13:20,450][core.datasets.dataset_train][INFO] - Loaded zoom-gym-bbox44 dataset, num samples 72104
+[2025-09-16 13:13:30,207][core.datasets.dataset_train][INFO] - Loaded static-gym-bbox44 dataset, num samples 83185
+[2025-09-16 13:13:40,829][core.datasets.dataset_train][INFO] - Loaded static-office-bbox44 dataset, num samples 21991
+[2025-09-16 13:13:46,039][core.datasets.dataset_train][INFO] - Loaded orbit-office-bbox44 dataset, num samples 21852
+[2025-09-16 13:13:51,202][core.datasets.dataset_train][INFO] - Loaded static-hdri-zoomed-bbox44 dataset, num samples 86660
+[2025-09-16 13:14:12,410][core.datasets.dataset_train][INFO] - Loaded pitchup-stadium-bbox44 dataset, num samples 36325
+[2025-09-16 13:14:17,215][core.datasets.dataset_train][INFO] - Loaded pitchdown-stadium-bbox44 dataset, num samples 36889
+[2025-09-16 13:14:21,999][core.datasets.dataset_train][INFO] - Loaded static-hdri-bmi-bbox44 dataset, num samples 22749
+[2025-09-16 13:14:23,223][core.datasets.dataset_train][INFO] - Loaded closeup-suburbb-bmi-bbox44 dataset, num samples 8769
+[2025-09-16 13:14:28,926][core.datasets.dataset_train][INFO] - Loaded closeup-suburbc-bmi-bbox44 dataset, num samples 8245
+[2025-09-16 13:14:34,593][core.datasets.dataset_train][INFO] - Loaded static-suburbd-bmi-bbox44 dataset, num samples 150860
+[2025-09-16 13:14:47,801][core.datasets.dataset_train][WARNING] - static-suburbd-bmi-bbox44: 47809 missing images. Skipping those samples.
+[2025-09-16 13:14:47,933][core.datasets.dataset_train][INFO] - Loaded zoom-gym-bmi-bbox44 dataset, num samples 31019
+[2025-09-16 13:14:52,680][core.datasets.dataset_train][INFO] - Loaded static-office-hair-bbox44 dataset, num samples 21731
+[2025-09-16 13:14:57,292][core.datasets.dataset_train][INFO] - Loaded zoom-suburbd-hair-bbox44 dataset, num samples 23017
+[2025-09-16 13:14:59,046][core.datasets.dataset_train][INFO] - Loaded static-gym-hair-bbox44 dataset, num samples 17553
+[2025-09-16 13:15:00,889][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-15-bbox44 dataset, num samples 22305
+[2025-09-16 13:15:05,369][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-19-bbox44 dataset, num samples 22623
+[2025-09-16 13:15:10,611][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-12-bbox44 dataset, num samples 22569
+[2025-09-16 13:15:14,928][core.datasets.dataset_train][INFO] - Loaded orbit-archviz-10-bbox44 dataset, num samples 21825
+[2025-09-16 13:15:21,694][core.datasets.dataset_train][INFO] - Loaded insta-1 dataset, num samples 1258262
+[2025-09-16 13:15:28,733][core.datasets.dataset_train][WARNING] - insta-1: 1258262 missing images. Skipping those samples.
+[2025-09-16 13:15:32,179][core.datasets.dataset_train][INFO] - Loaded insta-2 dataset, num samples 1546764
+[2025-09-16 13:15:41,001][core.datasets.dataset_train][WARNING] - insta-2: 1546764 missing images. Skipping those samples.
+[2025-09-16 13:15:41,190][core.datasets.dataset_train][INFO] - Loaded coco-train dataset, num samples 39668
+[2025-09-16 13:15:41,406][core.datasets.dataset_train][WARNING] - coco-train: 39668 missing images. Skipping those samples.
+[2025-09-16 13:15:41,438][core.datasets.dataset_train][INFO] - Loaded mpii-train dataset, num samples 7135
+[2025-09-16 13:15:41,478][core.datasets.dataset_train][WARNING] - mpii-train: 7135 missing images. Skipping those samples.
+[2025-09-16 13:15:42,325][core.datasets.dataset_train][INFO] - Loaded aic dataset, num samples 535161
+[2025-09-16 13:15:46,034][core.datasets.dataset_train][WARNING] - aic: 535161 missing images. Skipping those samples.
+[2025-09-16 13:15:52,979][core.datasets.dataset_val][INFO] - Loaded emdb-smpl dataset, num samples 24117
