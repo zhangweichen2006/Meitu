@@ -14,3 +14,4 @@ core.*
 *sapiens/.conda*
 out*
 logs*
+*.log

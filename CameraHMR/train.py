@@ -71,16 +71,19 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     ]
 
     trainer = pl.Trainer(
-            accelerator='gpu',
-            devices=1,
-            log_every_n_steps=500,
+            accelerator=cfg.trainer.accelerator,
+            devices=cfg.trainer.devices,
+            num_nodes=cfg.trainer.num_nodes,
+            log_every_n_steps=cfg.trainer.log_every_n_steps,
             val_check_interval=cfg.trainer.val_check_interval,
-            precision='16-mixed',
+            precision=cfg.trainer.precision,
             max_steps=cfg.trainer.max_steps,
             logger=loggers,
             callbacks=callbacks,
-            strategy=DDPStrategy(find_unused_parameters=True),
+            strategy=(cfg.trainer.strategy if hasattr(cfg.trainer, 'strategy') else DDPStrategy(find_unused_parameters=True)),
+            sync_batchnorm=(cfg.trainer.sync_batchnorm if hasattr(cfg.trainer, 'sync_batchnorm') else False),
         )
+    print(trainer)
 
     object_dict = {
         "cfg": cfg,

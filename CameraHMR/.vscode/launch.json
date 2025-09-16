@@ -11,11 +11,11 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "env": {
-                "CUDA_VISIBLE_DEVICES": "7",
+                "CUDA_VISIBLE_DEVICES": "4,5",
                 "PYOPENGL_PLATFORM": "egl",
                 "LIBGL_ALWAYS_SOFTWARE": "1"
             },
-            "args": ["data=bedlam_only", "experiment=camerahmr", "exp_name=train_1", "trainer.devices=1"]
+            "args": ["data=train", "experiment=camerahmr", "exp_name=train_1", "trainer.devices=2"]
         }
     ]
 }
