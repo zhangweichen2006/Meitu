@@ -3,8 +3,8 @@
 # conda activate sapiens
 cd seg
 
-INPUT=/data/RECON/EMDB/P9/76_outdoor_sitting/images
-OUTPUT_ROOT=/home/cevin/Meitu/sapiens/output/EMDB/P9/76_outdoor_sitting
+INPUT=/data/RECON/Moyo/moyo_toolkit/data/220923_yogi_body_hands_03596_Cat_Cow_Pose_or_Marjaryasana_-a/YOGI_Cam_01
+OUTPUT_ROOT=/home/cevin/Meitu/sapiens/output/MOYO/YOGI_Cam_01
 
 # create output directory if it doesn't exist
 mkdir -p $OUTPUT_ROOT
@@ -41,7 +41,7 @@ mkdir -p $OUTPUT_ROOT
 # normal with masks
 # python demo/demo_normal_vis.py \
 #   configs/sapiens_depth/render_people/sapiens_2b_render_people-1024x768.py \
-#   pretrain/checkpoints/sapiens_2b/sapiens_2b_render_people_epoch_25.pth \
+#   ../pretrain/checkpoints/sapiens_2b/sapiens_2b_render_people_epoch_25.pth \
 #   --input $INPUT \
 #   --seg_dir $OUTPUT_ROOT/seg_masks \
 #   --output_root $OUTPUT_ROOT/normal_2b
