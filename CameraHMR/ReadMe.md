@@ -1,7 +1,7 @@
 
 <div align="center">
 
-# **CameraHMR: Aligning People with Perspective (3DV 2025)**  
+# **CameraHMR: Aligning People with Perspective (3DV 2025)**
 
 [**Priyanka Patel**](https://pixelite1201.github.io/) &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; [**Michael J. Black**](https://ps.is.mpg.de/person/black)
 
@@ -11,7 +11,7 @@
 
 ---
 
-![](teaser/teaser.png)  
+![](teaser/teaser.png)
 *Figure: CameraHMR Results*
 
 </div>
@@ -23,7 +23,7 @@
 - **CameraHMR Demo Code**
 - **CameraHMR Training and Evaluation Code**
 - **DenseKP Code**
-- **CamSMPLify Code**  
+- **CamSMPLify Code**
 
 
 ## **Installation**
@@ -49,7 +49,7 @@ bash fetch_demo_data.sh
 Alternatively, download files manually from the [CameraHMR website](https://camerahmr.is.tue.mpg.de). Ensure to update paths in [`constants.py`](core/constants.py) if doing so manually.
 
 
-Run the demo with following command. It will run demo on all images in the specified --image_folder, and save renderings of the reconstructions and the output mesh in --out_folder. 
+Run the demo with following command. It will run demo on all images in the specified --image_folder, and save renderings of the reconstructions and the output mesh in --out_folder.
 
 ```
 python demo.py --image_folder demo_images --output_folder output_images
@@ -58,6 +58,16 @@ python demo.py --image_folder demo_images --output_folder output_images
 ##  **4DHumans Labels with full perspective camera**
 
 You can download the training data; fitted SMPL parameters for **INSTA/AIC/COCO/MPII images** from the [CameraHMR website](https://camerahmr.is.tue.mpg.de/index.html) (registration required).
+
+11G     ./ava-train-midframes-1fps-vitpose
+341M    ./coco-val
+4.8G    ./mpii-train
+24G     ./h36m-train
+2.9G    ./mpi-inf-train-pruned
+7.6G    ./coco-train-2014-vitpose-pruned
+23G     ./aic-train-vitpose
+3.2G    ./coco-train-2014-pruned
+236G    ./insta-train-vitpose-replicate
 
 Alternatively, use the following script:
 
@@ -76,17 +86,17 @@ python dataset_vis.py --image_folder path_to_img_folder --output_folder path_for
 path_to_img_folder corresponds to path of download INSTA/AIC images. path_to_npz_file corresponds to downloaded SMPL params.
 
 
-## Training and Evaluation 
-Please check out the [document](docs/training.md) for Training and Evaluation detail instructions. 
+## Training and Evaluation
+Please check out the [document](docs/training.md) for Training and Evaluation detail instructions.
 
 ## 🙌 **Acknowledgements**
 
 This project leverages outstanding resources from:
 
-- [ 4D-Humans](https://github.com/shubham-goel/4D-Humans?tab=readme-ov-file)  
-- [ BEDLAM](https://bedlam.is.tue.mpg.de/)  
-- [ SMPLify](https://smplify.is.tue.mpg.de/)  
-- [ ViTPose](https://github.com/ViTAE-Transformer/ViTPose)  
+- [ 4D-Humans](https://github.com/shubham-goel/4D-Humans?tab=readme-ov-file)
+- [ BEDLAM](https://bedlam.is.tue.mpg.de/)
+- [ SMPLify](https://smplify.is.tue.mpg.de/)
+- [ ViTPose](https://github.com/ViTAE-Transformer/ViTPose)
 - [ Detectron2](https://github.com/facebookresearch/detectron2)
 
 

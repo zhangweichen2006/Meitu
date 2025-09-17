@@ -7,10 +7,10 @@ def extract_images(start_index, end_index, tar_url_template, output_dir):
     # Format start and end indices as six-digit strings
     start = f"{int(start_index):06d}"
     end = f"{int(end_index):06d}"
-    
+
     # Construct the WebDataset URL with the range of tar files
     url = tar_url_template.format(start, end)
-    
+
     # Ensure the output image directory exists
     os.makedirs(output_dir, exist_ok=True)
 
@@ -35,7 +35,7 @@ def extract_images(start_index, end_index, tar_url_template, output_dir):
 
             # Create the output directory if it doesn't exist
             os.makedirs(image_path_dir, exist_ok=True)
-            
+
             image_path = os.path.join(image_path_dir, filename)
 
             # Save the image using OpenCV
@@ -51,8 +51,9 @@ if __name__ == "__main__":
     end_index = sys.argv[2]
 
     # Define the URL template and output directory
-    tar_url_template = "data/4DHumans/insta-train-vitpose-replicate/{0..{1}}.tar" #Download from 4D-Humans website
-    output_dir = "data/training-images/insta"
+    # Use brace expansion supported by WebDataset; escape braces for str.format
+    tar_url_template = "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/data/training-images/4dhuman/hmr2_training_data/dataset_tars/h36m-train/{{{0}..{1}}}.tar" # Download from 4D-Humans website
+    output_dir = "data/training-images/Human36M"
 
     # Run the extraction function
     extract_images(start_index, end_index, tar_url_template, output_dir)

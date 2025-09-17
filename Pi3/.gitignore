@@ -53,3 +53,4 @@ output
 *.jpg
 *.so
 *.o
+*.safetensors
