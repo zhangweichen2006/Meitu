@@ -180,8 +180,15 @@ class DatasetTrainTest(Dataset):
                 end_idx = min(i+self.infer_batch_size, len(self.imgname))
                 normal_res = sapiens_normal_model.infer_paths(self.img_paths[i:end_idx])
                 sapiens_pixel_normals.append(normal_res)
+                # normal 2 rgb and save
                 # save sapiens_pixel_normals to image_path_normal
                 sapiens_normal_folder = self.img_paths[0].replace('training-images', 'traintest-labels').rsplit('/',1)[0]+"_sapiens_normals"
+
+                for n, normal in enumerate(normal_res):
+                    normal_rgb = np.array(normal*0.5+0.5)*255.0
+                    normal_rgb = np.moveaxis(np.array(normal_rgb), 0, -1).astype(np.uint8)
+                    normal_rgb = cv2.cvtColor(normal_rgb, cv2.COLOR_BGR2RGB)
+                    cv2.imwrite(f'{sapiens_normal_folder}/normal_rgb_{n}.png', normal_rgb)
 
             self.sapiens_pixel_normals = sapiens_pixel_normals
             self.data['sapiens_pixel_normals'] = self.sapiens_pixel_normals
@@ -315,7 +322,16 @@ class DatasetTrainTest(Dataset):
             item['keypoints_3d'] = torch.matmul(model.J_regressor, gt_vertices[0])
             item['vertices'] = gt_vertices[0].float()
 
-        item['smpl_normals'] = self.smpl_normals[index]
+        if 'smpl_normals' in self.data.files:
+            item['smpl_normals'] = self.smpl_normals[index]
+        else:
+            item['smpl_normals'] = np.zeros((1, 6890, 3))
+
+        if 'sapiens_pixel_normals_path' in self.data.files:
+            item['sapiens_pixel_normals_path'] = self.sapiens_pixel_normals_path[index]
+        else:
+            item['sapiens_pixel_normals_path'] = np.zeros((1, 1, 1))
+
         return item
 
     def __len__(self):

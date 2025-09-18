@@ -11,15 +11,25 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "env": {
-                "CUDA_VISIBLE_DEVICES": "1",
+                "CUDA_VISIBLE_DEVICES": "3,6",
                 "PYOPENGL_PLATFORM": "egl",
                 "LIBGL_ALWAYS_SOFTWARE": "1",
                 "DISPLAY": "localhost:12.0"
             },
-            "args": ["data=bedlam_one", "experiment=camerahmr", "exp_name=train_1", "trainer.devices=2"]
+            "args": ["SapiensLite/torchscript/normal/checkpoints/sapiens_2b/sapiens_2b_normal_render_people_epoch_70_torchscript.pt2",
+            "--input",
+            "data/training-images/",
+            "--output_root",
+            "data/traintest-sapiens-normals/",
+            "--batch_size",
+            "2"]
         }
     ]
 }
+
+// ["data=bedlam_only", "experiment=camerahmr", "exp_name=train_1", "trainer.devices=2"]
+
+
 // CUDA_VISIBLE_DEVICES=6 python process_input_features.py data=bedlam_only experiment=camerahmr_multi exp_name=train_bedrun1 trainer.devices=2
 
 // CUDA_VISIBLE_DEVICES=6 python train.py data=bedlam_only experiment=camerahmr exp_name=train_bedrun1 trainer.devices=2
