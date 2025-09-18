@@ -66,7 +66,7 @@ def do_augmentation(aug_config: CfgNode) -> Tuple:
         do_extreme_crop (bool): Whether to apply extreme cropping (as proposed in EFT).
         color_scale (List): Color rescaling factor
         tx (float): Random translation along the x axis.
-        ty (float): Random translation along the y axis. 
+        ty (float): Random translation along the y axis.
     """
 
     tx = np.clip(np.random.randn(), -1.0, 1.0) * aug_config.TRANS_FACTOR
@@ -169,13 +169,13 @@ def trans_points2d_parallel(keypoints_2d: np.array, trans:np.array):
 
     ones = np.ones((keypoints_2d.shape[0], 1))
     keypoints_augmented = np.hstack([keypoints_2d, ones])
-    
+
     # Perform the transformation: (3, 3) dot (N, 3)^T => (3, N)
     transformed_keypoints = np.dot(trans, keypoints_augmented.T).T
-    
+
     # Extract the transformed 2D points by discarding the last row
     transformed_keypoints_2d = transformed_keypoints[:, :2]
-    
+
     return transformed_keypoints_2d
 
 def get_transform(center, scale, res, rot=0):
@@ -224,16 +224,16 @@ def crop_img(img, ul, br, border_mode=cv2.BORDER_CONSTANT, border_value=0):
     bb_width = patch_width = br[0] - ul[0]
     bb_height = patch_height = br[1] - ul[1]
     trans = gen_trans_from_patch_cv(c_x, c_y, bb_width, bb_height, patch_width, patch_height, 1.0, 0)
-    img_patch = cv2.warpAffine(img, trans, (int(patch_width), int(patch_height)), 
-                                flags=cv2.INTER_LINEAR, 
+    img_patch = cv2.warpAffine(img, trans, (int(patch_width), int(patch_height)),
+                                flags=cv2.INTER_LINEAR,
                                 borderMode=border_mode,
                                 borderValue=border_value
                         )
-    
+
     # Force borderValue=cv2.BORDER_CONSTANT for alpha channel
     if (img.shape[2] == 4) and (border_mode != cv2.BORDER_CONSTANT):
-        img_patch[:,:,3] = cv2.warpAffine(img[:,:,3], trans, (int(patch_width), int(patch_height)), 
-                                            flags=cv2.INTER_LINEAR, 
+        img_patch[:,:,3] = cv2.warpAffine(img[:,:,3], trans, (int(patch_width), int(patch_height)),
+                                            flags=cv2.INTER_LINEAR,
                                             borderMode=cv2.BORDER_CONSTANT,
                             )
 
@@ -261,7 +261,7 @@ def generate_image_patch_skimage(img: np.array, c_x: float, c_y: float,
         img_patch (np.array): Cropped image patch of shape (patch_height, patch_height, 3)
         trans (np.array): Transformation matrix.
     """
-    
+
     img_height, img_width, img_channels = img.shape
     if do_flip:
        img = img[:, ::-1, :]
@@ -283,7 +283,7 @@ def generate_image_patch_skimage(img: np.array, c_x: float, c_y: float,
     assert bb_width == bb_height, f'{bb_width=} != {bb_height=}'
     assert patch_width == patch_height, f'{patch_width=} != {patch_height=}'
     scale1 = scale*bb_width/200.
-    
+
     # Upper left point
     ul = np.array(transform([1, 1], center, scale1, res, invert=1, as_int=False)) - 1
     # Bottom right point
@@ -345,7 +345,7 @@ def generate_image_patch_skimage(img: np.array, c_x: float, c_y: float,
 
     # resize image
     new_img = resize(new_img, res) # scipy.misc.imresize(new_img, res)
-    
+
     new_img = np.clip(new_img, 0, 255).astype(np.uint8)
 
     return new_img, trans
@@ -382,15 +382,15 @@ def generate_image_patch_cv2(img: np.array, c_x: float, c_y: float,
 
     trans = gen_trans_from_patch_cv(c_x, c_y, bb_width, bb_height, patch_width, patch_height, scale, rot)
 
-    img_patch = cv2.warpAffine(img, trans, (int(patch_width), int(patch_height)), 
-                        flags=cv2.INTER_LINEAR, 
+    img_patch = cv2.warpAffine(img, trans, (int(patch_width), int(patch_height)),
+                        flags=cv2.INTER_LINEAR,
                         borderMode=border_mode,
                         borderValue=border_value,
                 )
     # Force borderValue=cv2.BORDER_CONSTANT for alpha channel
     if (img.shape[2] == 4) and (border_mode != cv2.BORDER_CONSTANT):
-        img_patch[:,:,3] = cv2.warpAffine(img[:,:,3], trans, (int(patch_width), int(patch_height)), 
-                                            flags=cv2.INTER_LINEAR, 
+        img_patch[:,:,3] = cv2.warpAffine(img[:,:,3], trans, (int(patch_width), int(patch_height)),
+                                            flags=cv2.INTER_LINEAR,
                                             borderMode=cv2.BORDER_CONSTANT,
                             )
 
@@ -545,7 +545,7 @@ def get_example_projverts(img_path: str|np.ndarray, center_x: float, center_y: f
         cvimg = img_path
     else:
         raise TypeError('img_path must be either a string or a numpy array')
-    
+
     img_height, img_width, img_channels = cvimg.shape
     img_size = np.array([img_height, img_width])
 
@@ -554,16 +554,16 @@ def get_example_projverts(img_path: str|np.ndarray, center_x: float, center_y: f
         scale, rot, do_flip, do_extreme_crop, extreme_crop_lvl, color_scale, tx, ty = do_augmentation(augm_config)
     else:
         scale, rot, do_flip, do_extreme_crop, extreme_crop_lvl, color_scale, tx, ty = 1.0, 0, False, False, 0, [1.0, 1.0, 1.0], 0., 0.
-    
+
     if width < 1 or height < 1:
         breakpoint()
-    
+
     if do_extreme_crop:
         if extreme_crop_lvl == 0:
             center_x1, center_y1, width1, height1 = extreme_cropping(center_x, center_y, width, height, keypoints_2d)
         elif extreme_crop_lvl == 1:
             center_x1, center_y1, width1, height1 = extreme_cropping_aggressive(center_x, center_y, width, height, keypoints_2d)
-        
+
         THRESH = 4
         if width1 >= THRESH and height1 >= THRESH:
             center_x, center_y, width, height = center_x1, center_y1, width1, height1
@@ -576,7 +576,7 @@ def get_example_projverts(img_path: str|np.ndarray, center_x: float, center_y: f
         downsampling_factor = (patch_width / (width * scale))
         if downsampling_factor > 1.1:
             cvimg = gaussian(cvimg, sigma=(downsampling_factor-1)/2, channel_axis=2, preserve_range=True, truncate=3.0)
-    
+
     # Augmentations
     if do_augment and augm_config.USE_ALB:
         import albumentations as A
@@ -596,12 +596,12 @@ def get_example_projverts(img_path: str|np.ndarray, center_x: float, center_y: f
         albumentation_aug = A.Compose([A.OneOf(aug_comp, p=augm_config.ALB_PROB),
                                        A.OneOf(aug_mod, p=augm_config.ALB_PROB)])
         cvimg = albumentation_aug(image=cvimg)['image']
-    
+
     # Generate Image Patch
     img_patch_cv, trans = generate_image_patch_cv2(cvimg, center_x, center_y, width, height,
                                                     patch_width, patch_height, do_flip, scale, rot,
                                                     border_mode=border_mode)
-    
+
     image = img_patch_cv[:, :, ::-1] if is_bgr else img_patch_cv.copy()
     img_patch = convert_cvimg_to_tensor(image)
 
@@ -610,11 +610,11 @@ def get_example_projverts(img_path: str|np.ndarray, center_x: float, center_y: f
         img_patch[n_c, :, :] = np.clip(img_patch[n_c, :, :] * color_scale[n_c], 0, 255)
         if mean is not None and std is not None:
             img_patch[n_c, :, :] = (img_patch[n_c, :, :] - mean[n_c]) / std[n_c]
-    
+
     # Transform Keypoints
     keypoints_2d[:, :2] = trans_points2d_parallel(keypoints_2d[:, 0:2], trans)
     keypoints_2d[:, :-1] = keypoints_2d[:, :-1] / patch_width - 0.5
-    
+
     # Transform Proj Verts if provided
     if proj_verts is not None:
         proj_verts[:, :2] = trans_points2d_parallel(proj_verts[:, 0:2], trans)
@@ -635,7 +635,7 @@ def get_example(img_path: str|np.ndarray, center_x: float, center_y: float,
                 border_mode: int = cv2.BORDER_CONSTANT,
                 return_trans: bool = False,
                 dataset: str = None):
- 
+
     if isinstance(img_path, str):
         # 1. load image
         cvimg = cv2.imread(img_path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
@@ -704,14 +704,14 @@ def get_example(img_path: str|np.ndarray, center_x: float, center_y: float,
         albumentation_aug = A.Compose([A.OneOf(aug_comp,
                                        p=augm_config.ALB_PROB),
                                        A.OneOf(aug_mod,
-                                       p=augm_config.ALB_PROB)])          
+                                       p=augm_config.ALB_PROB)])
         cvimg = albumentation_aug(image=cvimg)['image']
-        
+
     img_patch_cv, trans = generate_image_patch_cv2(cvimg,
                                                     center_x, center_y,
                                                     width, height,
                                                     patch_width, patch_height,
-                                                    do_flip, scale, rot, 
+                                                    do_flip, scale, rot,
                                                     border_mode=border_mode)
 
 

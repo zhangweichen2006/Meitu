@@ -8,10 +8,10 @@ import torch
 import torch.nn as nn
 from huggingface_hub import PyTorchModelHubMixin  # used for model hub
 
-from vggt.models.aggregator import Aggregator
-from vggt.heads.camera_head import CameraHead
-from vggt.heads.dpt_head import DPTHead
-from vggt.heads.track_head import TrackHead
+from .aggregator import Aggregator
+from ..heads.camera_head import CameraHead
+from ..heads.dpt_head import DPTHead
+from ..heads.track_head import TrackHead
 
 
 class VGGT(nn.Module, PyTorchModelHubMixin):
@@ -50,11 +50,11 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
                 - track (torch.Tensor): Point tracks with shape [B, S, N, 2] (from the last iteration), in pixel coordinates
                 - vis (torch.Tensor): Visibility scores for tracked points with shape [B, S, N]
                 - conf (torch.Tensor): Confidence scores for tracked points with shape [B, S, N]
-        """        
+        """
         # If without batch dimension, add it
         if len(images.shape) == 4:
             images = images.unsqueeze(0)
-            
+
         if query_points is not None and len(query_points.shape) == 2:
             query_points = query_points.unsqueeze(0)
 
@@ -67,7 +67,7 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
                 pose_enc_list = self.camera_head(aggregated_tokens_list)
                 predictions["pose_enc"] = pose_enc_list[-1]  # pose encoding of the last iteration
                 predictions["pose_enc_list"] = pose_enc_list
-                
+
             if self.depth_head is not None:
                 depth, depth_conf = self.depth_head(
                     aggregated_tokens_list, images=images, patch_start_idx=patch_start_idx

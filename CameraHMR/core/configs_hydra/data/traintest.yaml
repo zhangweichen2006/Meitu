@@ -1,0 +1,7 @@
+# @package _global_
+
+DATASETS:
+  TRAIN_DATASETS: 'static-hdri-bbox44'
+  VAL_DATASETS: static-hdri-bbox44
+  #_3dpw-test-cam-smpl_rich-smplx_coco-val-smpl
+

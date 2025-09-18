@@ -22,9 +22,9 @@ class DataModule(pl.LightningDataModule):
         self.val_dataset = self.val_dataset_prepare()
 
     def train_dataset_prepare(self):
-        if self.cfg.DATASETS.DATASETS_AND_RATIOS:
-            dataset_names = self.cfg.DATASETS.DATASETS_AND_RATIOS.split('_')
-            dataset_list = [DatasetKeypoints(self.cfg, ds) for ds in dataset_names]
+        if self.cfg.DATASETS.TRAIN_DATASETS:
+            dataset_names = self.cfg.DATASETS.TRAIN_DATASETS.split('_')
+            dataset_list = [DatasetKeypoints(self.cfg, ds, version='train', is_train=True) for ds in dataset_names]
             train_ds = torch.utils.data.ConcatDataset(dataset_list)
             return train_ds
         else:
@@ -32,7 +32,7 @@ class DataModule(pl.LightningDataModule):
 
     def val_dataset_prepare(self):
         dataset_names = self.cfg.DATASETS.VAL_DATASETS.split('_')
-        dataset_list = [DatasetKeypoints(self.cfg, ds, is_train=False) for ds in dataset_names]
+        dataset_list = [DatasetKeypoints(self.cfg, ds, version='test', is_train=False) for ds in dataset_names]
         return dataset_list
 
     def train_dataloader(self):

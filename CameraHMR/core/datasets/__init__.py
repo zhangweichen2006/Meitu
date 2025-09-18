@@ -7,6 +7,7 @@ import os
 from ..configs import DATASET_FOLDERS, DATASET_FILES
 from .dataset_train import DatasetTrain
 from .dataset_val import DatasetVal
+from .dataset_traintest import DatasetTrainTest
 
 class DataModule(pl.LightningDataModule):
 
@@ -20,9 +21,12 @@ class DataModule(pl.LightningDataModule):
         self.test_dataset = None
         self.mocap_dataset = None
 
-    def setup(self, stage: Optional[str] = None):
-        self.train_dataset = self.train_dataset_prepare()
-        self.val_dataset = self.val_dataset_prepare()
+    def setup(self, stage: Optional[str] = None, **kwargs):
+        if stage == 'train_test':
+            self.train_test_dataset = self.train_test_dataset_prepare(**kwargs)
+        else:
+            self.train_dataset = self.train_dataset_prepare()
+            self.val_dataset = self.val_dataset_prepare()
 
     def train_dataset_prepare(self):
         if self.cfg.DATASETS.DATASETS_AND_RATIOS:
@@ -31,13 +35,13 @@ class DataModule(pl.LightningDataModule):
             valid_datasets = []
             for ds in dataset_names:
                 img_dir = DATASET_FOLDERS.get(ds)
-                lbl_map = DATASET_FILES[True] if isinstance(DATASET_FILES, list) else DATASET_FILES
+                lbl_map = DATASET_FILES['train'] if isinstance(DATASET_FILES, list) or isinstance(DATASET_FILES, dict) else DATASET_FILES
                 lbl_file = lbl_map.get(ds) if isinstance(lbl_map, dict) else None
                 if img_dir and os.path.isdir(img_dir) and lbl_file and os.path.isfile(lbl_file):
                     valid_datasets.append(ds)
                 else:
-                    print(f"Dataset {ds} does not exist")
-            dataset_list = [DatasetTrain(self.cfg, ds) for ds in valid_datasets]
+                    print(f"Train Dataset {ds} does not exist")
+            dataset_list = [DatasetTrain(self.cfg, ds, version='train') for ds in valid_datasets]
             train_ds = torch.utils.data.ConcatDataset(dataset_list)
             return train_ds
         else:
@@ -48,13 +52,27 @@ class DataModule(pl.LightningDataModule):
         valid_datasets = []
         for ds in dataset_names:
             img_dir = DATASET_FOLDERS.get(ds)
-            lbl_map = DATASET_FILES[False] if isinstance(DATASET_FILES, list) else DATASET_FILES
+            lbl_map = DATASET_FILES['test'] if isinstance(DATASET_FILES, list) or isinstance(DATASET_FILES, dict) else DATASET_FILES
             lbl_file = lbl_map.get(ds) if isinstance(lbl_map, dict) else None
             if img_dir and os.path.isdir(img_dir) and lbl_file and os.path.isfile(lbl_file):
                 valid_datasets.append(ds)
             else:
-                print(f"Dataset {ds} does not exist")
-        dataset_list = [DatasetVal(self.cfg, ds, is_train=False) for ds in valid_datasets]
+                print(f"Val Dataset {ds} does not exist")
+        dataset_list = [DatasetVal(self.cfg, ds, version='test') for ds in valid_datasets]
+        return dataset_list
+
+    def train_test_dataset_prepare(self, **kwargs):
+        dataset_names = self.cfg.DATASETS.TRAIN_DATASETS.split('_')
+        valid_datasets = []
+        for ds in dataset_names:
+            img_dir = DATASET_FOLDERS.get(ds)
+            lbl_map = DATASET_FILES['traintest'] if isinstance(DATASET_FILES, list) or isinstance(DATASET_FILES, dict) else DATASET_FILES
+            lbl_file = lbl_map.get(ds) if isinstance(lbl_map, dict) else None
+            if img_dir and os.path.isdir(img_dir) and lbl_file and os.path.isfile(lbl_file):
+                valid_datasets.append(ds)
+            else:
+                print(f"Train (Train Test) Dataset {ds} does not exist")
+        dataset_list = [DatasetTrainTest(self.cfg, ds, version='traintest', **kwargs) for ds in valid_datasets]
         return dataset_list
 
     def train_dataloader(self):
@@ -67,8 +85,8 @@ class DataModule(pl.LightningDataModule):
             val_dataloaders.append(torch.utils.data.DataLoader(val_ds, self.cfg.TRAIN.BATCH_SIZE, drop_last=True, num_workers=self.cfg.GENERAL.NUM_WORKERS))
         return val_dataloaders
 
-    def test_dataloader(self):
-        val_dataloaders = []
-        for val_ds in self.val_dataset:
-            val_dataloaders.append(torch.utils.data.DataLoader(val_ds, self.cfg.TRAIN.BATCH_SIZE, drop_last=True, num_workers=self.cfg.GENERAL.NUM_WORKERS))
-        return val_dataloaders
+    def train_test_dataloader(self):
+        train_test_dataloaders = []
+        for train_test_ds in self.train_test_dataset:
+            train_test_dataloaders.append(torch.utils.data.DataLoader(train_test_ds, self.cfg.TRAIN.BATCH_SIZE, drop_last=False, num_workers=self.cfg.GENERAL.NUM_WORKERS))
+        return train_test_dataloaders

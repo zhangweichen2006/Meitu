@@ -1,134 +1,134 @@
 import os
 from typing import Optional, Tuple, Union, List
 
+import cv2
+import numpy as np
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
 import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+from multiprocessing import cpu_count
 
 
 def _load_sapiens_model(checkpoint_path: str, use_torchscript: bool):
     if use_torchscript:
         return torch.jit.load(checkpoint_path)
-    # torch.export (ExportedProgram)
     return torch.export.load(checkpoint_path).module()
 
 
-class SapiensNormalModel(pl.LightningModule):
+def fake_pad_images_to_batchsize(imgs: torch.Tensor, target_bs: int) -> torch.Tensor:
+    if imgs.shape[0] == target_bs:
+        return imgs
+    return F.pad(imgs, (0, 0, 0, 0, 0, 0, 0, target_bs - imgs.shape[0]), value=0)
+
+
+@torch.no_grad()
+def inference_model(model: nn.Module, imgs: torch.Tensor, device: torch.device, dtype: torch.dtype) -> List[torch.Tensor]:
+    outputs = model(imgs.to(dtype=dtype, device=device))
+    # Normalize return to list of per-image [C,H,W] tensors (as in vis_normal)
+    if isinstance(outputs, torch.Tensor):
+        if outputs.dim() == 4:
+            # [B, C, H, W] -> list([C,H,W])
+            results = [t.detach().cpu() for t in outputs]
+        else:
+            results = [outputs.detach().cpu()]
+    elif isinstance(outputs, (list, tuple)):
+        results = [t.detach().cpu() if isinstance(t, torch.Tensor) else t for t in outputs]
+    else:
+        raise TypeError(f"Unexpected model output type: {type(outputs)}")
+    return results
+
+
+class AdhocImageDataset(Dataset):
+
+    def __init__(self, image_paths: List[str], shape_hw: Tuple[int, int], mean: List[float], std: List[float]):
+        super().__init__()
+        self.image_paths = image_paths
+        self.shape_hw = shape_hw  # (H, W)
+        self.mean = np.array(mean, dtype=np.float32).reshape(3, 1, 1)
+        self.std = np.array(std, dtype=np.float32).reshape(3, 1, 1)
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx: int):
+        path = self.image_paths[idx]
+        img = cv2.imread(path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+        if img is None:
+            raise FileNotFoundError(f"Failed to read image: {path}")
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        h, w = self.shape_hw
+        img_resized = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
+        img_chw = img_resized.transpose(2, 0, 1).astype(np.float32)
+        # Normalize in 0..255 domain using provided mean/std
+        img_norm = (img_chw - self.mean) / self.std
+        return os.path.basename(path), img_resized, torch.from_numpy(img_norm)
+
+
+class SapiensNormalWrapper:
 
     def __init__(
         self,
         checkpoint_path: str,
+        device: Union[str, torch.device] = "cuda:0",
         use_torchscript: Optional[bool] = None,
-        use_fp16: bool = False,
-        input_size_hw: Optional[Tuple[int, int]] = (1024, 768),  # (H, W)
+        fp16: bool = False,
+        input_size_hw: Tuple[int, int] = (1440, 1080),
         compile_model: bool = False,
+        batch_size: int = 32,
     ) -> None:
-        super().__init__()
-
         if not os.path.isabs(checkpoint_path):
             checkpoint_path = os.path.abspath(checkpoint_path)
 
         if use_torchscript is None:
             use_torchscript = "_torchscript" in os.path.basename(checkpoint_path)
 
+        self.device = torch.device(device)
         self.use_torchscript = use_torchscript
         self.input_size_hw = input_size_hw
+        self.batch_size = batch_size
 
-        # dtype policy follows SapiensLite demo: bf16 by default (or fp16 if requested)
+        # dtype per vis_normal
         if self.use_torchscript:
-            self.model_dtype = torch.float32
+            self.run_dtype = torch.float32
         else:
-            self.model_dtype = torch.float16 if use_fp16 else torch.bfloat16
+            self.run_dtype = torch.float16 if fp16 else torch.bfloat16
 
         model = _load_sapiens_model(checkpoint_path, use_torchscript)
-
         if not self.use_torchscript:
-            model = model.to(self.model_dtype)
+            model = model.to(self.run_dtype)
             if compile_model:
                 try:
                     model = torch.compile(model, mode="max-autotune", fullgraph=True)
                 except Exception:
                     pass
-        self.model = model
+        self.model = model.to(self.device).eval()
 
-        # SapiensLite demo mean/std are in 0..255 scale
-        mean_255 = torch.tensor([123.5, 116.5, 103.5]).view(1, 3, 1, 1)
-        std_255 = torch.tensor([58.5, 57.0, 57.5]).view(1, 3, 1, 1)
-        self.register_buffer("_mean_255", mean_255, persistent=False)
-        self.register_buffer("_std_255", std_255, persistent=False)
+    def build_dataloader(self, image_paths: List[str]) -> DataLoader:
+        dataset = AdhocImageDataset(
+            image_paths=image_paths,
+            shape_hw=self.input_size_hw,
+            mean=[123.5, 116.5, 103.5],
+            std=[58.5, 57.0, 57.5],
+        )
+        loader = DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=max(min(self.batch_size, cpu_count()), 1),
+            pin_memory=True,
+        )
+        return loader
 
     @torch.no_grad()
-    def forward(self, batch: dict) -> torch.Tensor:
-        """
-        Args:
-            batch: expects key 'img' with shape [B, 3, H, W], RGB, float in [0,1] or [0,255].
-
-        Returns:
-            Float tensor of surface normals with shape [B, 3, H, W], values ~ in [-1, 1].
-        """
-        images: torch.Tensor = batch["img"]
-        b, c, h, w = images.shape
-
-        images = images.contiguous()
-
-        # Scale to [0, 255] if inputs look like [0,1]
-        with torch.no_grad():
-            if images.max() <= 2.0:
-                images = images * 255.0
-
-        # Optional resize to the model's expected (H, W); Sapiens normal export is typically shape-fixed
-        if self.input_size_hw is not None:
-            target_h, target_w = self.input_size_hw
-            if (h, w) != (target_h, target_w):
-                images = F.interpolate(images, size=(target_h, target_w), mode="bilinear", align_corners=False)
-
-        # Normalize using SapiensLite convention (0..255 scale)
-        mean_255 = self._mean_255.to(device=images.device, dtype=images.dtype)
-        std_255 = self._std_255.to(device=images.device, dtype=images.dtype)
-        images = (images - mean_255) / std_255
-
-        # Cast dtype as required by the backend
-        run_dtype = self.model_dtype
-        images = images.to(run_dtype)
-
-        # Run model
-        outputs = self.model(images)
-
-        # Handle different possible output structures from export
-        normals = self._coerce_to_bchw(outputs)
-
-        # L2-normalize vector per pixel
-        normals = F.normalize(normals, dim=1, eps=1e-5)
-
-        # Resize back to original input size if we changed it
-        if self.input_size_hw is not None and (h, w) != self.input_size_hw:
-            normals = F.interpolate(normals, size=(h, w), mode="bilinear", align_corners=False)
-
-        # Ensure float32 for downstream consumers
-        return normals.to(dtype=torch.float32)
-
-    def _coerce_to_bchw(self, outputs: Union[torch.Tensor, List[torch.Tensor], tuple]) -> torch.Tensor:
-        """Coerce various return types into a [B, 3, H, W] tensor.
-        The SapiensLite demo iterates over a list of per-image tensors; support that case too.
-        """
-        if isinstance(outputs, torch.Tensor):
-            # Expect shape [B, 3, H, W] already
-            return outputs
-        if isinstance(outputs, (list, tuple)):
-            # Could be list of per-image [3, H, W]
-            if len(outputs) == 0:
-                raise RuntimeError("Sapiens normal model returned empty outputs list")
-            if isinstance(outputs[0], torch.Tensor) and outputs[0].dim() == 3:
-                return torch.stack(outputs, dim=0)
-            # Or tuple/list with a single tensor payload
-            if len(outputs) == 1 and isinstance(outputs[0], torch.Tensor):
-                return outputs[0]
-        if isinstance(outputs, dict):
-            # Heuristic: try common keys
-            for key in ("normal", "normals", "output", "out"):
-                if key in outputs and isinstance(outputs[key], torch.Tensor):
-                    return outputs[key]
-        raise TypeError(f"Unsupported output type from Sapiens model: {type(outputs)}")
-
-    # No device orchestration here: Lightning handles device/precision/ddp.
+    def infer_paths(self, image_paths: List[str]) -> List[torch.Tensor]:
+        loader = self.build_dataloader(image_paths)
+        all_results: List[torch.Tensor] = []
+        for _, _, batch_imgs in loader:
+            valid_images_len = batch_imgs.shape[0]
+            padded_imgs = fake_pad_images_to_batchsize(batch_imgs, self.batch_size)
+            result = inference_model(self.model, padded_imgs, device=self.device, dtype=self.run_dtype)
+            # Trim to valid batch length and extend
+            for r in result[:valid_images_len]:
+                all_results.append(r)
+        return all_results

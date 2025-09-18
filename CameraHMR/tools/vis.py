@@ -17,7 +17,7 @@ _persist_dir = os.environ.get('CAMERAHMR_VIS_DIR', '/tmp/camerahmr_vis')
 _persist_img = os.path.join(_persist_dir, 'latest.png')
 
 
-def vis_img(img, bgr_to_rgb=False):
+def pool_img(img, bgr_to_rgb=False):
     """Publish an image frame to the Gradio UI.
 
     - img: np.ndarray (RGB or BGR), PIL.Image, torch.Tensor, or file path.
@@ -74,20 +74,20 @@ def vis_img(img, bgr_to_rgb=False):
             pass
 
 
-def vis_dense_kp(img, dense_kp, conf_threshold=0.3, point_size=2):
+def poll_dense_kp(img, dense_kp, conf_threshold=0.3, point_size=2):
     """Visualize dense keypoints on an image.
-    
+
     Args:
         img: np.ndarray (RGB), PIL.Image, torch.Tensor, or file path
         dense_kp: np.ndarray of shape (N, 3) where each row is (x, y, confidence)
         conf_threshold: minimum confidence to show a keypoint
         point_size: radius of keypoint circles
-    
+
     Returns:
         np.ndarray: Image with keypoints overlaid
     """
     import cv2
-    
+
     # Convert image to numpy array
     if isinstance(img, str):
         arr = cv2.imread(img, cv2.IMREAD_UNCHANGED)
@@ -102,21 +102,21 @@ def vis_dense_kp(img, dense_kp, conf_threshold=0.3, point_size=2):
         arr = img.copy()
     else:
         raise ValueError(f"Invalid image type: {type(img)}")
-    
+
     # Ensure uint8 format
     if arr.dtype != np.uint8:
         if arr.dtype in [np.float32, np.float64] and arr.max() <= 1.0:
             arr = (arr * 255).astype(np.uint8)
         else:
             arr = np.clip(arr, 0, 255).astype(np.uint8)
-    
+
     if dense_kp is None or len(dense_kp) == 0:
         return arr
-    
+
     # Convert to numpy if needed
     if hasattr(dense_kp, 'detach'):  # torch tensor
         dense_kp = dense_kp.detach().cpu().numpy()
-    
+
     # Draw keypoints
     vis_img = arr.copy()
     for i, (x, y, conf) in enumerate(dense_kp):
@@ -125,37 +125,25 @@ def vis_dense_kp(img, dense_kp, conf_threshold=0.3, point_size=2):
             if i < 24:  # SMPL joints
                 color = (255, 0, 0)  # Red for main joints
             elif i < 100:  # Body keypoints
-                color = (0, 255, 0)  # Green for body keypoints  
+                color = (0, 255, 0)  # Green for body keypoints
             else:  # Face/hand keypoints
                 color = (0, 0, 255)  # Blue for face/hand keypoints
-            
+
             cv2.circle(vis_img, (int(x), int(y)), point_size, color, thickness=-1)
             # Add small text with keypoint index for debugging
             if point_size >= 3:
-                cv2.putText(vis_img, str(i), (int(x)+3, int(y)-3), 
+                cv2.putText(vis_img, str(i), (int(x)+3, int(y)-3),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255,255,255), 1)
-    
+
     return vis_img
 
-
-def vis_img_with_dense_kp(img, dense_kp=None, conf_threshold=0.3, point_size=2, bgr_to_rgb=False):
-    """Convenience function to visualize image with dense keypoints and send to Gradio.
-    
-    Args:
-        img: Image to display
-        dense_kp: Dense keypoints array (N, 3) with (x, y, confidence)
-        conf_threshold: Minimum confidence to show keypoint
-        point_size: Size of keypoint circles
-        bgr_to_rgb: Whether to convert BGR to RGB
-    """
-    if dense_kp is not None:
-        img_with_kp = vis_dense_kp(img, dense_kp, conf_threshold, point_size)
-        vis_img(img_with_kp, bgr_to_rgb=bgr_to_rgb)
-    else:
-        vis_img(img, bgr_to_rgb=bgr_to_rgb)
+def pool_img_with_obj(img, obj, bgr_to_rgb=False):
+    """Convenience function to visualize image with object and send to Gradio."""
+    pool_img(img, bgr_to_rgb=bgr_to_rgb)
+    poll_obj(obj)
 
 
-def vis_obj(obj):
+def poll_obj(obj):
     """Publish a Python object to the Gradio UI (JSON if possible, else str)."""
     global _latest_object
     with _state_lock:
@@ -244,7 +232,7 @@ def start_gradio(host: str = '0.0.0.0', port: int = 7860, share: bool = False, i
     """Start a Gradio UI in the background.
 
     - Open http://<server-ip>:<port>/ from your Mac.
-    - Call vis_img(...) or vis_obj(...) anywhere to update.
+    - Call pool_img(...) or poll_obj(...) anywhere to update.
     """
     global _demo
     if _demo is not None:
@@ -283,14 +271,40 @@ def start_gradio(host: str = '0.0.0.0', port: int = 7860, share: bool = False, i
     _demo = demo
     return demo
 
+def vis_img(img, bgr_to_rgb=False):
+    import cv2
+    if isinstance(img, str):
+        arr = cv2.imread(img, cv2.IMREAD_UNCHANGED)
+        if arr is None:
+            raise ValueError(f"Could not load image from path: {img}")
+        bgr_to_rgb = True
+    elif (torch is not None) and isinstance(img, torch.Tensor):
+        arr = img.detach().cpu().numpy()
+    elif isinstance(img, Image.Image):
+        arr = np.array(img)
+    elif isinstance(img, np.ndarray):
+        arr = img
+    else:
+        raise ValueError(f"Invalid image type: {type(img)}")
 
+    cv2.imshow('Image', arr)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 def vis_pc(pc):
     import open3d as o3d
-    pc = pc.detach().cpu().numpy()
-    pc = o3d.geometry.PointCloud()
-    pc.points = o3d.utility.Vector3dVector(pc)
-    o3d.visualization.draw_geometries([pc])
+    if isinstance(pc, torch.Tensor):
+        pc = pc.detach().cpu().numpy()
+    elif isinstance(pc, np.ndarray):
+        pc = pc
+    elif isinstance(pc, list):
+        pc = np.array(pc)
+    else:
+        raise ValueError(f"Invalid point cloud type: {type(pc)}")
+
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pc)
+    o3d.visualization.draw_geometries([pcd])
 
 def vis_smpl(smpl_output):
     import cv2

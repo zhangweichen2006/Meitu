@@ -53,16 +53,54 @@ DATASET_FOLDERS = {
 
 }
 
-DATASET_FILES = [
-    {
-        '3dpw-test-cam-smpl': os.path.join(base_dir, 'data/test-labels/3dpw_test.npz'),
-        'emdb-smpl': os.path.join(base_dir, 'data/test-labels/emdb_test.npz'),
-        'rich-smplx': os.path.join(base_dir, 'data/test-labels/rich_test.npz'),
-        'spec-test-smpl': os.path.join(base_dir, 'data/test-labels/spec_test.npz'),
-        'coco-val-smpl': os.path.join(base_dir, 'data/test-labels/coco_val.npz'),
-        'zoom-suburbd-bbox44': os.path.join(base_dir, 'data/training-labels/bedlam-labels/20221010_3-10_500_batch01hand_zoom_suburb_d_6fps.npz'),
+DATASET_FILES = {
+    'traintest': {
+        '3dpw-test-cam-smpl': os.path.join(base_dir, 'data/traintest-labels/3dpw_test.npz'),
+        'emdb-smpl': os.path.join(base_dir, 'data/traintest-labels/emdb_test.npz'),
+        'rich-smplx': os.path.join(base_dir, 'data/traintest-labels/rich_test.npz'),
+        'spec-test-smpl': os.path.join(base_dir, 'data/traintest-labels/spec_test.npz'),
+        'coco-val-smpl': os.path.join(base_dir, 'data/traintest-labels/coco_val.npz'),
+
+        'zoom-suburbd-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221010_3-10_500_batch01hand_zoom_suburb_d_6fps.npz'),
+        'emdb-smpl': os.path.join(base_dir, 'data/traintest-labels/emdb_test.npz'),
+        'aic': os.path.join(base_dir, 'data/traintest-labels/aic-release.npz'),
+        'insta-1': os.path.join(base_dir, 'data/traintest-labels/insta1-release.npz'),
+        'insta-2': os.path.join(base_dir, 'data/traintest-labels/insta2-release.npz'),
+        'coco-train': os.path.join(base_dir, 'data/traintest-labels/coco-release.npz'),
+        'mpii-train': os.path.join(base_dir, 'data/traintest-labels/mpii-release.npz'),
+
+        'agora-body-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/agora.npz'),
+        'zoom-suburbd-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221010_3-10_500_batch01hand_zoom_suburb_d_6fps.npz'),
+        'closeup-suburba-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221011_1_250_batch01hand_closeup_suburb_a_6fps.npz'),
+        'closeup-suburbb-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221011_1_250_batch01hand_closeup_suburb_b_6fps.npz'),
+        'closeup-suburbc-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221011_1_250_batch01hand_closeup_suburb_c_6fps.npz'),
+        'closeup-suburbd-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221011_1_250_batch01hand_closeup_suburb_d_6fps.npz'),
+        'closeup-gym-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221012_1_500_batch01hand_closeup_highSchoolGym_6fps.npz'),
+        'zoom-gym-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221012_3-10_500_batch01hand_zoom_highSchoolGym_6fps.npz'),
+        'static-gym-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221013_3-10_500_batch01hand_static_highSchoolGym_6fps.npz'),
+        'static-office-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221013_3_250_batch01hand_static_bigOffice_6fps.npz'),
+        'orbit-office-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221013_3_250_batch01hand_orbit_bigOffice_6fps.npz'),
+        'orbit-archviz-15-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221014_3_250_batch01hand_orbit_archVizUI3_time15_6fps.npz'),
+        'orbit-archviz-19-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221015_3_250_batch01hand_orbit_archVizUI3_time19_6fps.npz'),
+        'orbit-archviz-12-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221015_3_250_batch01hand_orbit_archVizUI3_time12_6fps.npz'),
+        'orbit-archviz-10-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221015_3_250_batch01hand_orbit_archVizUI3_time10_6fps.npz'),
+        'static-hdri-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221010_3_1000_batch01hand_6fps.npz'),
+        'static-hdri-zoomed-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221017_3_1000_batch01hand_6fps.npz'),
+        'staticzoomed-suburba-frameocc-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221017_1_250_batch01hand_closeup_suburb_a_6fps.npz'),
+        'pitchup-stadium-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221018_3-8_250_batch01hand_pitchUp52_stadium_6fps.npz'),
+        'static-hdri-bmi-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221019_3_250_highbmihand_6fps.npz'),
+        'closeup-suburbb-bmi-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221019_1_250_highbmihand_closeup_suburb_b_6fps.npz'),
+        'closeup-suburbc-bmi-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221019_1_250_highbmihand_closeup_suburb_c_6fps.npz'),
+        'static-suburbd-bmi-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221019_3-8_1000_highbmihand_static_suburb_d_6fps.npz'),
+        'zoom-gym-bmi-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221020_3-8_250_highbmihand_zoom_highSchoolGym_a_6fps.npz'),
+        'pitchdown-stadium-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221018_3-8_250_batch01hand_pitchDown52_stadium_6fps.npz'),
+        'static-office-hair-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221022_3_250_batch01handhair_static_bigOffice_30fps.npz'),
+        'zoom-suburbd-hair-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221024_10_100_batch01handhair_zoom_suburb_d_30fps.npz'),
+        'static-gym-hair-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221024_3-10_100_batch01handhair_static_highSchoolGym_30fps.npz'),
+        'orbit-stadium-bmi-bbox44': os.path.join(base_dir, 'data/traintest-labels/bedlam-labels/20221019_3-8_250_highbmihand_orbit_stadium_6fps.npz'),
+
     },
-    {
+    'train': {
         'emdb-smpl': os.path.join(base_dir, 'data/test-labels/emdb_test.npz'),
         'aic': os.path.join(base_dir, 'data//training-labels/aic-release.npz'),
         'insta-1': os.path.join(base_dir, 'data//training-labels/insta1-release.npz'),
@@ -100,8 +138,16 @@ DATASET_FILES = [
         'static-gym-hair-bbox44': os.path.join(base_dir, 'data/training-labels/bedlam-labels/20221024_3-10_100_batch01handhair_static_highSchoolGym_30fps.npz'),
         'orbit-stadium-bmi-bbox44': os.path.join(base_dir, 'data/training-labels/bedlam-labels/20221019_3-8_250_highbmihand_orbit_stadium_6fps.npz'),
 
+    },
+    'test' :{
+        '3dpw-test-cam-smpl': os.path.join(base_dir, 'data/test-labels/3dpw_test.npz'),
+        'emdb-smpl': os.path.join(base_dir, 'data/test-labels/emdb_test.npz'),
+        'rich-smplx': os.path.join(base_dir, 'data/test-labels/rich_test.npz'),
+        'spec-test-smpl': os.path.join(base_dir, 'data/test-labels/spec_test.npz'),
+        'coco-val-smpl': os.path.join(base_dir, 'data/test-labels/coco_val.npz'),
     }
-]
+        # 'meitu'
+}
 
 def to_lower(x: Dict) -> Dict:
     return {k.lower(): v for k, v in x.items()}

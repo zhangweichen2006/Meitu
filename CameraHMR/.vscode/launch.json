@@ -13,9 +13,10 @@
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0,1",
                 "PYOPENGL_PLATFORM": "egl",
-                "LIBGL_ALWAYS_SOFTWARE": "1"
+                "LIBGL_ALWAYS_SOFTWARE": "1",
+                "DISPLAY": "localhost:12.0"
             },
-            "args": ["data=train", "experiment=camerahmr", "exp_name=train_1", "trainer.devices=2"]
+            "args": ["data=bedlam_one", "experiment=camerahmr", "exp_name=train_1", "trainer.devices=2"]
         }
     ]
 }

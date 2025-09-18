@@ -19,11 +19,12 @@ from ..utils.pylogger import get_pylogger
 log = get_pylogger(__name__)
 
 class DatasetKeypoints(Dataset):
-    def __init__(self, cfg, dataset, use_augmentation=True, is_train=True):
+    def __init__(self, cfg, dataset, use_augmentation=True, version='train', is_train=False):
         super(DatasetKeypoints, self).__init__()
         self.dataset = dataset
-        self.is_train = is_train
+        self.version = version
         self.cfg = cfg
+        self.is_train = is_train
 
         self.IMG_SIZE = cfg.MODEL.IMAGE_SIZE
         self.BBOX_SHAPE = cfg.MODEL.get('BBOX_SHAPE', None)
@@ -38,7 +39,7 @@ class DatasetKeypoints(Dataset):
         }[cfg.DATASETS.get('BORDER_MODE', 'constant')]
 
         self.img_dir = DATASET_FOLDERS[dataset]
-        self.data = np.load(DATASET_FILES[is_train][dataset], allow_pickle=True)
+        self.data = np.load(DATASET_FILES[version][dataset], allow_pickle=True)
         self.imgname = self.data['imgname']
         # Bounding boxes are assumed to be in the center and scale format
         self.scale = self.data['scale']
@@ -81,7 +82,7 @@ class DatasetKeypoints(Dataset):
                                       FLIP_KEYPOINT_PERMUTATION,
                                       self.proj_verts[index].copy(),
                                       self.IMG_SIZE, self.IMG_SIZE,
-                                      self.MEAN, self.STD, self.is_train, augm_config,
+                                      self.MEAN, self.STD, self.version, augm_config,
                                       is_bgr=True,
                                       use_skimage_antialias=self.use_skimage_antialias,
                                       border_mode=self.border_mode,

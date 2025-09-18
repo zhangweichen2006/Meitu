@@ -16,3 +16,7 @@ output_dir: ${hydra:runtime.output_dir}
 
 # path to working directory
 work_dir: ${hydra:runtime.cwd}
+
+sapiens_normal_ckpt: ${oc.env:SAPIENS_NORMAL_CKPT}
+vggt_ckpt: ${oc.env:VGGT_CKPT}
+pi3_ckpt: ${oc.env:PI3_CKPT}
