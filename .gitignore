@@ -1,6 +1,6 @@
 *.zip
 *.tar
-data
+data/
 *.pkl
 *.pkl
 *.pt

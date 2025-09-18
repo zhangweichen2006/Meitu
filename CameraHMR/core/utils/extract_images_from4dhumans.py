@@ -52,8 +52,8 @@ if __name__ == "__main__":
 
     # Define the URL template and output directory
     # Use brace expansion supported by WebDataset; escape braces for str.format
-    tar_url_template = "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/data/training-images/4dhuman/hmr2_training_data/dataset_tars/h36m-train/{{{0}..{1}}}.tar" # Download from 4D-Humans website
-    output_dir = "data/training-images/Human36M"
+    tar_url_template = "/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/data/training-images/4dhuman/hmr2_training_data/dataset_tars/mpi-inf-train-pruned/{{{0}..{1}}}.tar" # Download from 4D-Humans website
+    output_dir = "data/training-images/MPII-pose"
 
     # Run the extraction function
     extract_images(start_index, end_index, tar_url_template, output_dir)
