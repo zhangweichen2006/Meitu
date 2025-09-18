@@ -53,16 +53,17 @@ class DatasetTrainTest(Dataset):
         self.data = np.load(DATASET_FILES[version][dataset], allow_pickle=True)
         self.imgname = self.data['imgname']
 
-        img_paths = [os.path.join(self.img_dir, str(p)) for p in self.imgname]
-        valid_paths = np.array([os.path.isfile(p) for p in img_paths])
+        self.img_paths = [os.path.join(self.img_dir, str(p)) for p in self.imgname]
+        self.valid_paths = np.array([os.path.isfile(p) for p in self.img_paths])
 
         # Filter out entries where the corresponding image file doesn't exist
-        if not valid_paths.all():
-            num_missing = int((~valid_paths).sum())
+        if not self.valid_paths.all():
+            num_missing = int((~self.valid_paths).sum())
             log.warning(f"{self.dataset}: {num_missing} missing images. Skipping those samples.")
             # Apply mask to all per-sample arrays
-            self.imgname = self.imgname[valid_paths]
-            self.data = {k: v[valid_paths] for k, v in self.data.items()}
+            self.imgname = self.imgname[self.valid_paths]
+            self.data = {k: v[self.valid_paths] for k, v in self.data.items()}
+            self.img_paths = np.array(self.img_paths)[self.valid_paths].tolist()
 
         self.scale = self.data['scale']
         self.center = self.data['center']
@@ -157,7 +158,6 @@ class DatasetTrainTest(Dataset):
             data_arrays['smpl_normals'] = self.smpl_normals
             np.savez(DATASET_FILES[self.version][dataset], **data_arrays)
 
-
         if 'sapiens_pixel_normals_path' in self.data:
             self.sapiens_pixel_normals_path = self.data['sapiens_pixel_normals_path']
         else:
@@ -170,11 +170,13 @@ class DatasetTrainTest(Dataset):
                                         fp16=cfg.models.sapiens.fp16,
                                         input_size_hw=cfg.models.sapiens.input_crop_size_hw,
                                         compile_model=cfg.models.sapiens.compile_model,
-                                    ).model
+                                    )
 
             sapiens_pixel_normals = []
-            for i in range(0, len(self.imgname), 16):
-                sapiens_normal_model.infer_paths(self.imgname[i:i+16])
+            for i in range(0, len(self.img_paths), self.infer_batch_size):
+                end_idx = min(i+self.infer_batch_size, len(self.imgname))
+                normal_res = sapiens_normal_model.infer_paths(self.img_paths[i:end_idx])
+                sapiens_pixel_normals.append(normal_res)
 
             self.sapiens_pixel_normals = sapiens_pixel_normals
             self.data['sapiens_pixel_normals'] = self.sapiens_pixel_normals
