@@ -14,19 +14,23 @@
                 "CUDA_VISIBLE_DEVICES": "1"
             },
             "args": [
-                "--render_png",
-                "--rgb_dir",
-                "/home/cevin/Meitu/data/test_data_img/all",
-                "--depth_dir",
-                "/home/cevin/Meitu/sapiens/output/all/",
-                "--output_dir",
-                "/home/cevin/Meitu/sapiens/output/point_clouds_FINAL_MASKED"
+                "/home/cevin/Meitu/CameraHMR/SapiensLite/torchscript/normal/checkpoints/sapiens_2b/sapiens_2b_normal_render_people_epoch_70_torchscript.pt2",
+                "--input",
+                "/home/cevin/Meitu/CameraHMR/data/training-images/20221010_3_1000_batch01hand_6fps/png/seq_000000",
+                "--output_root",
+                "/home/cevin/Meitu/sapiens/output/fixed_normalnew/",
+                "--batch_size",
+                "1"
             ]
         }
     ]
 }
 
 
+// parser.add_argument("--input", help="Input image dir")
+// parser.add_argument(
+//     "--output_root", "--output-root", default=None, help="Path to output dir"
+// )
 
 // project_pc.py
 // --render_png --rgb_dir /home/cevin/Meitu/data/test_data_img/all --depth_dir /home/cevin/Meitu/sapiens/output/depth_normal_5col_ALL49/ --output_dir /home/cevin/Meitu/sapiens/output/point_clouds_FINAL_MASKED

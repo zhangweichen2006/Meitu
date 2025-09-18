@@ -8,7 +8,7 @@
 *.pthl
 *.zip
 output*
-demo*
+./demo*
 out_camsmplify*
 core.*
 *sapiens/.conda*
