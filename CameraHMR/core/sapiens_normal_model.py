@@ -39,8 +39,8 @@ def inference_model(model: nn.Module, imgs: torch.Tensor, device: torch.device, 
     return results
 
 class AdhocImageDataset(torch.utils.data.Dataset):
-    def __init__(self, image_list, shape_hw=None, mean=None, std=None):
-        self.image_list = image_list
+    def __init__(self, image_paths, shape_hw=None, mean=None, std=None):
+        self.image_paths = image_paths
         if shape_hw:
             assert len(shape_hw) == 2
         if mean or std:
@@ -51,7 +51,7 @@ class AdhocImageDataset(torch.utils.data.Dataset):
         self.std = torch.tensor(std) if std else None
 
     def __len__(self):
-        return len(self.image_list)
+        return len(self.image_paths)
 
     def _preprocess(self, img):
         if self.shape_hw:
@@ -66,7 +66,7 @@ class AdhocImageDataset(torch.utils.data.Dataset):
         return img
 
     def __getitem__(self, idx):
-        orig_img_dir = self.image_list[idx]
+        orig_img_dir = self.image_paths[idx]
         orig_img = cv2.imread(orig_img_dir)
         # orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
         img = self._preprocess(orig_img)

@@ -1,11 +1,11 @@
 sapiens:
   use_torchscript: true
   fp16: False
-  input_crop_size_hw: (1440, 1080)
+  input_crop_size_hw: (1024, 768)
   mean: [123.5, 116.5, 103.5]
   std: [58.5, 57.0, 57.5]
   compile_model: False
-  batch_size: 32
+  infer_batch_size: 1
 
 vggt:
   use_torchscript: null
@@ -14,7 +14,7 @@ vggt:
   mean: [123.5, 116.5, 103.5]
   std: [58.5, 57.0, 57.5]
   compile_model: False
-  batch_size: 32
+  infer_batch_size: 4
 
 pi3:
   use_torchscript: null
@@ -23,4 +23,4 @@ pi3:
   mean: [123.5, 116.5, 103.5]
   std: [58.5, 57.0, 57.5]
   compile_model: False
-  batch_size: 32
+  infer_batch_size: 4

@@ -164,16 +164,15 @@ class DatasetTrainTest(Dataset):
         else:
             log.info(f'Processing sapiens pixel normals ...')
             sapiens_ckpt = cfg.paths.get('sapiens_normal_ckpt', os.environ.get('SAPIENS_NORMAL_CKPT', None))
-            self.infer_batch_size = cfg.models.sapiens.get('INFER_BATCH_SIZE', 16)
-            # ast.literal_eval(cfg.models.sapiens.input_crop_size_hw)
+            self.infer_batch_size = cfg.pretrained_models.sapiens.get('infer_batch_size', 4)
             sapiens_normal_model = SapiensNormalWrapper(
                                         checkpoint_path=sapiens_ckpt,
-                                        use_torchscript=cfg.models.sapiens.use_torchscript,
-                                        fp16=cfg.models.sapiens.fp16,
-                                        input_size_hw=None,
-                                        mean=self.MEAN,
-                                        std=self.STD,
-                                        compile_model=cfg.models.sapiens.compile_model,
+                                        use_torchscript=cfg.pretrained_models.sapiens.use_torchscript,
+                                        fp16=cfg.pretrained_models.sapiens.fp16,
+                                        input_size_hw=ast.literal_eval(cfg.pretrained_models.sapiens.input_crop_size_hw),
+                                        mean=cfg.pretrained_models.sapiens.mean,
+                                        std=cfg.pretrained_models.sapiens.std,
+                                        compile_model=cfg.pretrained_models.sapiens.compile_model,
                                     )
 
             sapiens_pixel_normals = []
@@ -181,6 +180,8 @@ class DatasetTrainTest(Dataset):
                 end_idx = min(i+self.infer_batch_size, len(self.imgname))
                 normal_res = sapiens_normal_model.infer_paths(self.img_paths[i:end_idx])
                 sapiens_pixel_normals.append(normal_res)
+                # save sapiens_pixel_normals to image_path_normal
+                sapiens_normal_folder = self.img_paths[0].replace('training-images', 'traintest-labels').rsplit('/',1)[0]+"_sapiens_normals"
 
             self.sapiens_pixel_normals = sapiens_pixel_normals
             self.data['sapiens_pixel_normals'] = self.sapiens_pixel_normals
