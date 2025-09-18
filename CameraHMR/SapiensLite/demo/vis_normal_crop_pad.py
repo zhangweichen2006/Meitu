@@ -155,14 +155,15 @@ def main():
     image_names = []
     out_names = []
 
-    # Check if the input is a directory or a text file
+    # Build image list and corresponding output paths mirroring directory structure
     for root, dirs, files in os.walk(input):
         for file in files:
             if file.endswith(".jpg") or file.endswith(".png") or file.endswith(".jpeg"):
-                image_names.append(os.path.join(root, file))
-
-                out_names.append(os.path.join(root, file).replace(input, args.output_root))
-                os.makedirs(os.path.dirname(os.path.join(root, file).replace(input, args.output_root)), exist_ok=True)
+                full_in = os.path.join(root, file)
+                full_out = full_in.replace(input, args.output_root)
+                image_names.append(full_in)
+                out_names.append(full_out)
+                os.makedirs(os.path.dirname(full_out), exist_ok=True)
 
     global BATCH_SIZE
     BATCH_SIZE = args.batch_size
@@ -174,7 +175,7 @@ def main():
         (input_shape[1], input_shape[2]),
         mean=[123.5, 116.5, 103.5],
         std=[58.5, 57.0, 57.5],
-        cropping=False,
+        cropping=True,
         out_names=out_names
     )
     inference_dataloader = torch.utils.data.DataLoader(
@@ -191,7 +192,18 @@ def main():
     for batch_idx, (batch_image_name, batch_out_name, batch_orig_imgs, batch_imgs) in tqdm(
         enumerate(inference_dataloader), total=len(inference_dataloader)
     ):
+        # Convert cropped, normalized tensors back to uint8 BGR images for saving
         valid_images_len = len(batch_imgs)
+        cropped_images_np = []
+        mean = np.array([123.5, 116.5, 103.5], dtype=np.float32)
+        std = np.array([58.5, 57.0, 57.5], dtype=np.float32)
+        for t in batch_imgs:  # t: [3, H, W] RGB, normalized
+            arr = t.detach().cpu().float().numpy().transpose(1, 2, 0)  # HWC RGB
+            arr = arr * std + mean  # de-normalize
+            arr = np.clip(arr, 0, 255).astype(np.uint8)
+            arr = arr[:, :, ::-1]  # RGB -> BGR for OpenCV
+            cropped_images_np.append(arr)
+
         batch_imgs = fake_pad_images_to_batchsize(batch_imgs)
         result = inference_model(exp_model, batch_imgs, dtype=dtype)
 
@@ -202,11 +214,10 @@ def main():
                 out_name,
                 args.seg_dir,
             )
-            for i, r, img_name, out_name in zip(
-                batch_orig_imgs[:valid_images_len],
+            for i, r, out_name in zip(
+                cropped_images_np[:valid_images_len],
                 result[:valid_images_len],
-                batch_image_name,
-                batch_out_name
+                batch_out_name,
             )
         ]
         img_save_pool.run_async(args_list)

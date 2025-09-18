@@ -17,3 +17,4 @@ __pycache__/
 *.gif
 cv
 output
+*.png

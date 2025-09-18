@@ -18,7 +18,7 @@
                 "--input",
                 "/home/cevin/Meitu/CameraHMR/data/training-images/20221010_3_1000_batch01hand_6fps/png/seq_000000",
                 "--output_root",
-                "/home/cevin/Meitu/sapiens/output/fixed_normalnew/",
+                "/home/cevin/Meitu/sapiens/output/fixed_segnew2/",
                 "--batch_size",
                 "1"
             ]

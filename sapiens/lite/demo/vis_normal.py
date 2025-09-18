@@ -153,30 +153,16 @@ def main():
 
     input = args.input
     image_names = []
+    out_names = []
 
     # Check if the input is a directory or a text file
-    if os.path.isdir(input):
-        input_dir = input  # Set input_dir to the directory specified in input
-        image_names = [
-            image_name
-            for image_name in sorted(os.listdir(input_dir))
-            if image_name.endswith(".jpg")
-            or image_name.endswith(".png")
-            or image_name.endswith(".jpeg")
-        ]
-    elif os.path.isfile(input) and input.endswith(".txt"):
-        # If the input is a text file, read the paths from it and set input_dir to the directory of the first image
-        with open(input, "r") as file:
-            image_paths = [line.strip() for line in file if line.strip()]
-        image_names = [
-            os.path.basename(path) for path in image_paths
-        ]  # Extract base names for image processing
-        input_dir = (
-            os.path.dirname(image_paths[0]) if image_paths else ""
-        )  # Use the directory of the first image path
+    for root, dirs, files in os.walk(input):
+        for file in files:
+            if file.endswith(".jpg") or file.endswith(".png") or file.endswith(".jpeg"):
+                image_names.append(os.path.join(root, file))
 
-    if not os.path.exists(args.output_root):
-        os.makedirs(args.output_root)
+                out_names.append(os.path.join(root, file).replace(input, args.output_root))
+                os.makedirs(os.path.dirname(os.path.join(root, file).replace(input, args.output_root)), exist_ok=True)
 
     global BATCH_SIZE
     BATCH_SIZE = args.batch_size
@@ -184,10 +170,12 @@ def main():
     n_batches = (len(image_names) + args.batch_size - 1) // args.batch_size
 
     inference_dataset = AdhocImageDataset(
-        [os.path.join(input_dir, img_name) for img_name in image_names],
+        image_names,
         (input_shape[1], input_shape[2]),
         mean=[123.5, 116.5, 103.5],
         std=[58.5, 57.0, 57.5],
+        cropping=False,
+        out_names=out_names
     )
     inference_dataloader = torch.utils.data.DataLoader(
         inference_dataset,
@@ -200,7 +188,7 @@ def main():
     img_save_pool = WorkerPool(
         img_save_and_viz, processes=max(min(args.batch_size, cpu_count()), 1)
     )
-    for batch_idx, (batch_image_name, batch_orig_imgs, batch_imgs) in tqdm(
+    for batch_idx, (batch_image_name, batch_out_name, batch_orig_imgs, batch_imgs) in tqdm(
         enumerate(inference_dataloader), total=len(inference_dataloader)
     ):
         valid_images_len = len(batch_imgs)
@@ -211,13 +199,14 @@ def main():
             (
                 i,
                 r,
-                os.path.join(args.output_root, os.path.basename(img_name)),
+                out_name,
                 args.seg_dir,
             )
-            for i, r, img_name in zip(
+            for i, r, img_name, out_name in zip(
                 batch_orig_imgs[:valid_images_len],
                 result[:valid_images_len],
                 batch_image_name,
+                batch_out_name
             )
         ]
         img_save_pool.run_async(args_list)
