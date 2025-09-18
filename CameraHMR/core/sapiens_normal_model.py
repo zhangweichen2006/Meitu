@@ -84,6 +84,8 @@ class SapiensNormalWrapper:
         input_size_hw: Tuple[int, int] = None,
         compile_model: bool = False,
         batch_size: int = 32,
+        mean: List[float] = None,
+        std: List[float] = None,
     ) -> None:
         if not os.path.isabs(checkpoint_path):
             checkpoint_path = os.path.abspath(checkpoint_path)
@@ -95,7 +97,8 @@ class SapiensNormalWrapper:
         self.use_torchscript = use_torchscript
         self.input_size_hw = input_size_hw
         self.batch_size = batch_size
-
+        self.mean = mean
+        self.std = std
         # dtype per vis_normal
         if self.use_torchscript:
             self.run_dtype = torch.float32
@@ -116,8 +119,8 @@ class SapiensNormalWrapper:
         dataset = AdhocImageDataset(
             image_paths=image_paths,
             shape_hw=self.input_size_hw,
-            mean=[123.5, 116.5, 103.5],
-            std=[58.5, 57.0, 57.5],
+            mean=self.mean,
+            std=self.std,
         )
         loader = DataLoader(
             dataset,
