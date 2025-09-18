@@ -18,6 +18,7 @@ from ..utils.camera_ray_utils import calc_plucker_embeds
 from ..utils.smpl_utils import compute_normals_torch
 # from tools.vis import vis_img,vis_pc
 from ..sapiens_normal_model import SapiensNormalWrapper
+import ast
 
 log = get_pylogger(__name__)
 
@@ -164,11 +165,14 @@ class DatasetTrainTest(Dataset):
             log.info(f'Processing sapiens pixel normals ...')
             sapiens_ckpt = cfg.paths.get('sapiens_normal_ckpt', os.environ.get('SAPIENS_NORMAL_CKPT', None))
             self.infer_batch_size = cfg.models.sapiens.get('INFER_BATCH_SIZE', 16)
+            # ast.literal_eval(cfg.models.sapiens.input_crop_size_hw)
             sapiens_normal_model = SapiensNormalWrapper(
                                         checkpoint_path=sapiens_ckpt,
                                         use_torchscript=cfg.models.sapiens.use_torchscript,
                                         fp16=cfg.models.sapiens.fp16,
-                                        input_size_hw=cfg.models.sapiens.input_crop_size_hw,
+                                        input_size_hw=None,
+                                        mean=self.MEAN,
+                                        std=self.STD,
                                         compile_model=cfg.models.sapiens.compile_model,
                                     )
 
