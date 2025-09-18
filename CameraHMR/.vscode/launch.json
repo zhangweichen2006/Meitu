@@ -20,7 +20,9 @@
         }
     ]
 }
-// python train.py data=bedlam_only experiment=camerahmr exp_name=train_bedrun1 trainer.devices=2
+// CUDA_VISIBLE_DEVICES=6 python process_input_features.py data=bedlam_only experiment=camerahmr_multi exp_name=train_bedrun1 trainer.devices=2
+
+// CUDA_VISIBLE_DEVICES=6 python train.py data=bedlam_only experiment=camerahmr exp_name=train_bedrun1 trainer.devices=2
 // "args": ["--vis", "False", "--save_vis_dir", "out_camsmplify"]
 // "args": ["--vis", "False", "--save_vis_dir", "out_camsmplify", "--input", "out_demo_opt_cam/init.npz", "--output_dir", "out_camsmplify_params"]
 

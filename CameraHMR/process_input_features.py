@@ -51,14 +51,14 @@ def evaluate(cfg: DictConfig, **kwargs) -> Tuple[dict, dict]:
 
     # DataModule; prepare validation/test splits for SAPIENS (no train augmentations)
     sapiens_datamodule = DataModule(cfg, dataset_cfg)
-    sapiens_datamodule.setup(stage='train_test', is_train=False, mean=cfg.models.sapiens.mean, std=cfg.models.sapiens.std, cropsize=cfg.models.sapiens.input_crop_size_hw)
+    sapiens_datamodule.setup(stage='train_test', is_train=False, mean=cfg.pretrained_models.sapiens.mean, std=cfg.pretrained_models.sapiens.std, cropsize=cfg.pretrained_models.sapiens.input_crop_size_hw)
 
     # Resolve devices
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     log.info(f"Using device: {device}")
 
     # Resolve checkpoints (env var takes precedence)
-
+    sapiens_ckpt = cfg.paths.get('sapiens_normal_ckpt', os.environ.get('SAPIENS_NORMAL_CKPT', None))
     vggt_ckpt = cfg.paths.get('vggt_ckpt', os.environ.get('VGGT_CKPT', None))
     pi3_ckpt = cfg.paths.get('pi3_ckpt', os.environ.get('PI3_CKPT', None))
     if sapiens_ckpt is None:
@@ -71,10 +71,10 @@ def evaluate(cfg: DictConfig, **kwargs) -> Tuple[dict, dict]:
     # Build models for inference
     sapiens_normal_model = SapiensNormalWrapper(
         checkpoint_path=sapiens_ckpt,
-        use_torchscript=cfg.models.sapiens.use_torchscript,
-        fp16=cfg.models.sapiens.fp16,
-        input_size_hw=cfg.models.sapiens.input_crop_size_hw,
-        compile_model=cfg.models.sapiens.compile_model,
+        use_torchscript=cfg.pretrained_models.sapiens.use_torchscript,
+        fp16=cfg.pretrained_models.sapiens.fp16,
+        input_size_hw=cfg.pretrained_models.sapiens.input_crop_size_hw,
+        compile_model=cfg.pretrained_models.sapiens.compile_model,
     ).model
     # vggt_model = VGGTModel(vggt_ckpt, device)
     # pi3_model = Pi3Model(pi3_ckpt, device)

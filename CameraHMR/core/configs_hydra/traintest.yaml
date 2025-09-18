@@ -8,7 +8,7 @@ defaults:
   - trainer: ddp.yaml
   - paths: default.yaml
   - hydra: default.yaml
-  - models: default.yaml
+  - pretrained_models: default.yaml
   # experiment configs allow for version control of specific hyperparameters
   # e.g. best hyperparameters for given model and datamodule
   - experiment: null

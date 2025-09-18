@@ -16,7 +16,7 @@ from torchvision.transforms import Normalize
 from ..constants import FLIP_KEYPOINT_PERMUTATION, NUM_JOINTS, NUM_BETAS, NUM_PARAMS_SMPL, NUM_PARAMS_SMPLX, SMPLX2SMPL, SMPLX_MODEL_DIR, SMPL_MODEL_DIR
 from ..utils.camera_ray_utils import calc_plucker_embeds
 from ..utils.smpl_utils import compute_normals_torch
-from tools.vis import vis_img,vis_pc
+# from tools.vis import vis_img,vis_pc
 from ..sapiens_normal_model import SapiensNormalWrapper
 
 log = get_pylogger(__name__)

@@ -29,8 +29,8 @@ class DataModule(pl.LightningDataModule):
             self.val_dataset = self.val_dataset_prepare()
 
     def train_dataset_prepare(self):
-        if self.cfg.DATASETS.DATASETS_AND_RATIOS:
-            dataset_names = self.cfg.DATASETS.DATASETS_AND_RATIOS.split('_')
+        if self.cfg.DATASETS.TRAIN_DATASETS:
+            dataset_names = self.cfg.DATASETS.TRAIN_DATASETS.split('_')
             # Filter out datasets whose image folder or label file does not exist
             valid_datasets = []
             for ds in dataset_names:
