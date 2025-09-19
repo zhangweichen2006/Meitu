@@ -71,7 +71,8 @@ def img_save_and_viz(
         .replace(".png", "_seg.npy")
     )
 
-    image = image.data.numpy() ## bgr image
+    if isinstance(image, torch.Tensor):
+        image = image.cpu().numpy()  ## bgr image
 
     seg_logits = F.interpolate(
         result.unsqueeze(0), size=image.shape[:2], mode="bilinear"
@@ -147,6 +148,12 @@ def main():
     )
     parser.add_argument("--title", default="result", help="The image identifier.")
     parser.add_argument(
+        "--swapHW", action="store_true", default=False, help="swap height and width"
+    )
+    parser.add_argument(
+        "--redo", action="store_true", default=False, help="redo all"
+    )
+    parser.add_argument(
         "--preprocess",
         choices=["resize", "crop_pad", "crop_resize"],
         default="resize",
@@ -183,39 +190,18 @@ def main():
 
     input = args.input
     image_names = []
+    out_names = []
 
-    # Check if the input is a directory or a text file
-    if os.path.isdir(input):
-        input_dir = input  # Set input_dir to the directory specified in input
-        image_names = [
-            image_name
-            for image_name in sorted(os.listdir(input_dir))
-            if image_name.endswith(".jpg")
-            or image_name.endswith(".png")
-            or image_name.endswith(".jpeg")
-        ]
-    elif os.path.isfile(input) and input.endswith(".txt"):
-        # If the input is a text file, read the paths from it and set input_dir to the directory of the first image
-        with open(input, "r") as file:
-            image_paths = [line.strip() for line in file if line.strip()]
-        image_names = [
-            os.path.basename(path) for path in image_paths
-        ]  # Extract base names for image processing
-        input_dir = (
-            os.path.dirname(image_paths[0]) if image_paths else ""
-        )  # Use the directory of the first image path
-    else:
-        raise ValueError("Invalid input, must be a directory or a text file")
-
-    if len(image_names) == 0:
-        raise ValueError("No images found in the input directory")
-
-    # If left unspecified, create an output folder relative to this script.
-    if args.output_root is None:
-        args.output_root = os.path.join(input_dir, "output")
-
-    if not os.path.exists(args.output_root):
-        os.makedirs(args.output_root)
+    # Build image list and corresponding output paths mirroring directory structure
+    for root, dirs, files in os.walk(input):
+        for file in files:
+            if file.endswith(".jpg") or file.endswith(".png") or file.endswith(".jpeg"):
+                full_in = os.path.join(root, file)
+                full_out = full_in.replace(args.input, args.output_root)
+                if not os.path.exists(full_out) or args.redo:
+                    image_names.append(full_in)
+                    out_names.append(full_out)
+                    os.makedirs(os.path.dirname(full_out), exist_ok=True)
 
     global BATCH_SIZE
     BATCH_SIZE = args.batch_size
@@ -224,27 +210,34 @@ def main():
 
     if args.preprocess == "crop_resize":
         inference_dataset = AdhocImageDataset(
-            [os.path.join(input_dir, img_name) for img_name in image_names],
+            image_names,
             (input_shape[1], input_shape[2]),
             mean=[123.5, 116.5, 103.5],
             std=[58.5, 57.0, 57.5],
             cropping=True,
             no_padding=True,
+            out_names=out_names,
+            swapHW=args.swapHW,
         )
     elif args.preprocess == "crop_pad":
         inference_dataset = AdhocImageDataset(
-            [os.path.join(input_dir, img_name) for img_name in image_names],
+            image_names,
             (input_shape[1], input_shape[2]),
             mean=[123.5, 116.5, 103.5],
             std=[58.5, 57.0, 57.5],
             cropping=True,
+            out_names=out_names,
+            swapHW=args.swapHW,
         )
     else:
         inference_dataset = AdhocImageDataset(
-            [os.path.join(input_dir, img_name) for img_name in image_names],
+            image_names,
             (input_shape[1], input_shape[2]),
             mean=[123.5, 116.5, 103.5],
             std=[58.5, 57.0, 57.5],
+            cropping=False,
+            out_names=out_names,
+            swapHW=args.swapHW,
         )
     inference_dataloader = torch.utils.data.DataLoader(
         inference_dataset,
@@ -257,10 +250,21 @@ def main():
     img_save_pool = WorkerPool(
         img_save_and_viz, processes=max(min(args.batch_size, cpu_count()), 1)
     )
-    for batch_idx, (batch_image_name, batch_orig_imgs, batch_imgs) in tqdm(
+    for batch_idx, (batch_image_name, batch_out_name, batch_orig_imgs, batch_imgs) in tqdm(
         enumerate(inference_dataloader), total=len(inference_dataloader)
     ):
+        # Convert cropped, normalized tensors back to uint8 BGR images for saving
         valid_images_len = len(batch_imgs)
+        cropped_images_np = []
+        mean = np.array([123.5, 116.5, 103.5], dtype=np.float32)
+        std = np.array([58.5, 57.0, 57.5], dtype=np.float32)
+        for t in batch_imgs:  # t: [3, H, W] RGB, normalized
+            arr = t.detach().cpu().float().numpy().transpose(1, 2, 0)  # HWC RGB
+            arr = arr * std + mean  # de-normalize
+            arr = np.clip(arr, 0, 255).astype(np.uint8)
+            arr = arr[:, :, ::-1]  # RGB -> BGR for OpenCV
+            cropped_images_np.append(arr)
+
         if args.preprocess != "crop_resize":
             batch_imgs = fake_pad_images_to_batchsize(batch_imgs)
         result = inference_model(exp_model, batch_imgs, dtype=dtype)
@@ -269,16 +273,16 @@ def main():
             (
                 i,
                 r,
-                os.path.join(args.output_root, os.path.basename(img_name)),
+                out_name,
                 GOLIATH_CLASSES,
                 GOLIATH_PALETTE,
                 args.title,
                 args.opacity,
             )
-            for i, r, img_name in zip(
-                batch_orig_imgs[:valid_images_len],
+            for i, r, out_name in zip(
+                cropped_images_np[:valid_images_len],
                 result[:valid_images_len],
-                batch_image_name,
+                batch_out_name,
             )
         ]
         img_save_pool.run_async(args_list)

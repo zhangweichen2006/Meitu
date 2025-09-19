@@ -163,7 +163,7 @@ def img_save_and_vis(
             if not isinstance(color, str):
                 color = tuple(int(c) for c in color[::-1])
             img = cv2.circle(img, (int(kpt[0]), int(kpt[1])), int(radius), color, -1)
-        
+
         # draw skeleton
         for skid, link_info in skeleton_info.items():
             pt1_idx, pt2_idx = link_info['link']
@@ -258,6 +258,18 @@ def main():
         default=False,
         help="Flip the input image horizontally and inference again",
     )
+    parser.add_argument(
+        "--preprocess",
+        choices=["resize", "crop_pad", "crop_resize"],
+        default="resize",
+        help="Preprocess strategy (not applied to detector input)",
+    )
+    parser.add_argument(
+        "--swapHW", action="store_true", default=False, help="swap height and width"
+    )
+    parser.add_argument(
+        "--redo", action="store_true", default=False, help="redo all"
+    )
 
     args = parser.parse_args()
 
@@ -285,6 +297,8 @@ def main():
         input_shape = (3,) + tuple(args.shape)
     else:
         raise ValueError("invalid input shape")
+    if args.swapHW:
+        input_shape = (input_shape[0], input_shape[2], input_shape[1])
 
     mp.log_to_stderr()
     torch._inductor.config.force_fuse_int_mm_with_mul = True
@@ -327,26 +341,35 @@ def main():
     BATCH_SIZE = args.batch_size
 
     input = args.input
-    image_names = []
-
-    # Check if the input is a directory or a text file
+    # Build list of files
     if os.path.isdir(input):
-        input_dir = input  # Set input_dir to the directory specified in input
-        image_names = [
-            image_name
+        input_dir = input
+        all_files = [
+            os.path.join(input_dir, image_name)
             for image_name in sorted(os.listdir(input_dir))
-            if image_name.endswith(".jpg") or image_name.endswith(".png")
+            if image_name.endswith(".jpg") or image_name.endswith(".png") or image_name.endswith(".jpeg")
         ]
     elif os.path.isfile(input) and input.endswith(".txt"):
-        # If the input is a text file, read the paths from it and set input_dir to the directory of the first image
         with open(input, "r") as file:
-            image_paths = [line.strip() for line in file if line.strip()]
-        image_names = [
-            os.path.basename(path) for path in image_paths
-        ]  # Extract base names for image processing
-        input_dir = (
-            os.path.dirname(image_paths[0]) if image_paths else ""
-        )  # Use the directory of the first image path
+            all_files = [line.strip() for line in file if line.strip()]
+        input_dir = os.path.dirname(all_files[0]) if all_files else ""
+    else:
+        raise ValueError("Invalid input, must be a directory or a text file")
+
+    if args.output_root == "":
+        raise ValueError("--output-root must be specified")
+    if not os.path.exists(args.output_root):
+        os.makedirs(args.output_root)
+
+    # Filter by --redo (skip images with existing outputs)
+    to_process = []
+    for fp in all_files:
+        out_img = os.path.join(args.output_root, os.path.basename(fp))
+        pred_json = out_img.replace(".jpg", ".json").replace(".png", ".json").replace(".jpeg", ".json")
+        if args.redo or not os.path.exists(pred_json):
+            to_process.append(fp)
+
+    image_names = [os.path.basename(p) for p in to_process]
 
     scale = args.heatmap_scale
     inference_dataset = AdhocImageDataset(
@@ -422,7 +445,7 @@ def main():
         n_pose_batches = (len(pose_imgs) + args.batch_size - 1) // args.batch_size
 
         # use this to tell torch compiler the start of model invocation as in 'flip' mode the tensor output is overwritten
-        torch.compiler.cudagraph_mark_step_begin()  
+        torch.compiler.cudagraph_mark_step_begin()
         pose_results = []
         for i in range(n_pose_batches):
             imgs = torch.stack(
