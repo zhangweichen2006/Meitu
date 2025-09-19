@@ -160,10 +160,11 @@ def main():
         for file in files:
             if file.endswith(".jpg") or file.endswith(".png") or file.endswith(".jpeg"):
                 full_in = os.path.join(root, file)
-                full_out = full_in.replace(input, args.output_root)
-                image_names.append(full_in)
-                out_names.append(full_out)
-                os.makedirs(os.path.dirname(full_out), exist_ok=True)
+                full_out = full_in.replace(args.input, args.output_root)
+                if not os.path.exists(full_out):
+                    image_names.append(full_in)
+                    out_names.append(full_out)
+                    os.makedirs(os.path.dirname(full_out), exist_ok=True)
 
     global BATCH_SIZE
     BATCH_SIZE = args.batch_size

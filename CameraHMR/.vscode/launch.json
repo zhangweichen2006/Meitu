@@ -11,21 +11,24 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "env": {
-                "CUDA_VISIBLE_DEVICES": "3,6",
+                "CUDA_VISIBLE_DEVICES": "3",
                 "PYOPENGL_PLATFORM": "egl",
                 "LIBGL_ALWAYS_SOFTWARE": "1",
                 "DISPLAY": "localhost:12.0"
             },
             "args": ["SapiensLite/torchscript/normal/checkpoints/sapiens_2b/sapiens_2b_normal_render_people_epoch_70_torchscript.pt2",
             "--input",
-            "data/training-images/",
+            "data/training-images/20221011_1_250_batch01hand_closeup_suburb_c_6fps",
             "--output_root",
-            "data/traintest-sapiens-normals/",
+            "data/training-images-sapiens-normals/20221011_1_250_batch01hand_closeup_suburb_c_6fps",
             "--batch_size",
-            "2"]
+            "1",
+            "--swapHW"]
         }
     ]
 }
+// --input data/test-images/3DPW/imageFiles/downtown_walkBridge_01 \
+// --output_root data/test-images-sapiens-normals-crop-small/3DPW/imageFiles/downtown_walkBridge_01 \
 
 // ["data=bedlam_only", "experiment=camerahmr", "exp_name=train_1", "trainer.devices=2"]
 

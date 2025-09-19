@@ -104,7 +104,7 @@ def main():
         "--output_root", "--output-root", default=None, help="Path to output dir"
     )
     parser.add_argument("--seg_dir", default=None, help="Path to seg dir")
-    parser.add_argument("--device", default="cuda:0", help="Device used for inference")
+    parser.add_argument("--device", default="cuda", help="Device used for inference")
     parser.add_argument(
         "--batch_size",
         "--batch-size",
@@ -151,19 +151,19 @@ def main():
         dtype = torch.float32  # TorchScript models use float32
         exp_model = exp_model.to(args.device)
 
-    input = args.input
     image_names = []
     out_names = []
 
     # Build image list and corresponding output paths mirroring directory structure
-    for root, dirs, files in os.walk(input):
+    for root, dirs, files in os.walk(args.input):
         for file in files:
             if file.endswith(".jpg") or file.endswith(".png") or file.endswith(".jpeg"):
                 full_in = os.path.join(root, file)
-                full_out = full_in.replace(input, args.output_root)
-                image_names.append(full_in)
-                out_names.append(full_out)
-                os.makedirs(os.path.dirname(full_out), exist_ok=True)
+                full_out = full_in.replace(args.input, args.output_root)
+                if not os.path.exists(full_out):
+                    image_names.append(full_in)
+                    out_names.append(full_out)
+                    os.makedirs(os.path.dirname(full_out), exist_ok=True)
 
     global BATCH_SIZE
     BATCH_SIZE = args.batch_size

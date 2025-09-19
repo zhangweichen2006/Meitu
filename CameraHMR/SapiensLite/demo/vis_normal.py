@@ -122,6 +122,12 @@ def main():
     parser.add_argument(
         "--fp16", action="store_true", default=False, help="Model inference dtype"
     )
+    parser.add_argument(
+        "--swapHW", action="store_true", default=False, help="swap height and width"
+    )
+    parser.add_argument(
+        "--redo", action="store_true", default=False, help="redo all"
+    )
     args = parser.parse_args()
 
     if len(args.shape) == 1:
@@ -130,6 +136,7 @@ def main():
         input_shape = (3,) + tuple(args.shape)
     else:
         raise ValueError("invalid input shape")
+
 
     mp.log_to_stderr()
     torch._inductor.config.force_fuse_int_mm_with_mul = True
@@ -159,13 +166,25 @@ def main():
     for root, dirs, files in os.walk(input):
         for file in files:
             if file.endswith(".jpg") or file.endswith(".png") or file.endswith(".jpeg"):
-                image_names.append(os.path.join(root, file))
+                outfile = os.path.join(root, file).replace(input, args.output_root)
+                if not os.path.exists(outfile) or args.redo:
+                    image_names.append(os.path.join(root, file))
 
-                out_names.append(os.path.join(root, file).replace(input, args.output_root))
-                os.makedirs(os.path.dirname(os.path.join(root, file).replace(input, args.output_root)), exist_ok=True)
+                    out_names.append(os.path.join(root, file).replace(input, args.output_root))
+                    os.makedirs(os.path.dirname(os.path.join(root, file).replace(input, args.output_root)), exist_ok=True)
 
     global BATCH_SIZE
     BATCH_SIZE = args.batch_size
+
+    # check training-images-sapiens-normals and merge to traintest-sapiens-normals
+    # for root, dirs, files in os.walk("data/training-images-sapiens-normals"):
+    #     for file in files:
+    #         if file.endswith(".jpg") or file.endswith(".png") or file.endswith(".jpeg"):
+    #             src_file = os.path.join(root, file).replace(".png", ".npy")
+    #             tgt_file = os.path.join(root.replace("data/training-images-sapiens-normals", "data/traintest-sapiens-normals"), file)
+    #             tgt_file = tgt_file.replace(".png", ".npy")
+    #             os.makedirs(os.path.dirname(tgt_file), exist_ok=True)
+    #             os.system(f"mv {src_file} {tgt_file}")
 
     n_batches = (len(image_names) + args.batch_size - 1) // args.batch_size
 
@@ -175,7 +194,8 @@ def main():
         mean=[123.5, 116.5, 103.5],
         std=[58.5, 57.0, 57.5],
         cropping=False,
-        out_names=out_names
+        out_names=out_names,
+        swapHW=args.swapHW
     )
     inference_dataloader = torch.utils.data.DataLoader(
         inference_dataset,
@@ -192,6 +212,16 @@ def main():
         enumerate(inference_dataloader), total=len(inference_dataloader)
     ):
         valid_images_len = len(batch_imgs)
+        cropped_images_np = []
+        mean = np.array([123.5, 116.5, 103.5], dtype=np.float32)
+        std = np.array([58.5, 57.0, 57.5], dtype=np.float32)
+        for t in batch_imgs:  # t: [3, H, W] RGB, normalized
+            arr = t.detach().cpu().float().numpy().transpose(1, 2, 0)  # HWC RGB
+            arr = arr * std + mean  # de-normalize
+            arr = np.clip(arr, 0, 255).astype(np.uint8)
+            arr = arr[:, :, ::-1]  # RGB -> BGR for OpenCV
+            cropped_images_np.append(arr)
+
         batch_imgs = fake_pad_images_to_batchsize(batch_imgs)
         result = inference_model(exp_model, batch_imgs, dtype=dtype)
 
@@ -202,10 +232,9 @@ def main():
                 out_name,
                 args.seg_dir,
             )
-            for i, r, img_name, out_name in zip(
-                batch_orig_imgs[:valid_images_len],
+            for i, r, out_name in zip(
+                cropped_images_np[:valid_images_len],
                 result[:valid_images_len],
-                batch_image_name,
                 batch_out_name
             )
         ]

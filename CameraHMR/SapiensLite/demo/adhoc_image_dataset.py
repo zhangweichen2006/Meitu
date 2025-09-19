@@ -8,7 +8,7 @@ import torch
 import cv2
 
 class AdhocImageDataset(torch.utils.data.Dataset):
-    def __init__(self, image_list, shape=None, mean=None, std=None, cropping=False, no_padding=False, out_names=None):
+    def __init__(self, image_list, shape=None, mean=None, std=None, cropping=False, no_padding=False, out_names=None, swapHW=False):
         self.image_list = image_list
         self.out_names = out_names
         if shape:
@@ -21,15 +21,44 @@ class AdhocImageDataset(torch.utils.data.Dataset):
         self.std = torch.tensor(std) if std else None
         self.cropping = cropping
         self.no_padding = no_padding
+        self.swapHW = swapHW
     def __len__(self):
         return len(self.image_list)
 
     def _preprocess(self, img):
+        if self.swapHW:
+            # rotate 90 degrees
+            img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+
         if self.shape:
             target_height, target_width = self.shape
             if self.cropping:
                 # Center-crop to target (height, width) instead of resizing
                 image_height, image_width = img.shape[:2]
+
+                # 竖屏图
+                if image_height > target_height:
+                    if image_height > image_width:
+                        image_height_ratio = image_height / target_height
+                        image_width_ratio = image_width / target_width
+                        if image_height_ratio > 1.5 or image_width_ratio > 1.5:
+                            # 竖屏图，且比例大于1.5，则resize较小ratio后进行中心裁剪
+                            ratio = min(image_height_ratio, image_width_ratio)
+                            new_height = int(image_height / ratio)
+                            new_width = int(image_width / ratio)
+                            img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+                            start_y = (new_height - target_height) // 2
+                            start_x = (new_width - target_width) // 2
+                            end_y = start_y + target_height
+                            end_x = start_x + target_width
+                            img = img[start_y:end_y, start_x:end_x]
+                        else:
+                            # 竖屏图，且比例小于1.5，则直接crop中心区域
+                            img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LINEAR)
+                else:
+                    # 横屏图
+                    image_height_ratio = image_height / target_height
+                    image_width_ratio = image_width / target_width
 
                 crop_height = min(target_height, image_height)
                 crop_width = min(target_width, image_width)
@@ -50,6 +79,13 @@ class AdhocImageDataset(torch.utils.data.Dataset):
 
                         # resize to target_height, target_width
                         img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LINEAR)
+                    else:
+                        # just crop the middle target_height, target_width of the image
+                        start_y = (image_height - target_height) // 2
+                        start_x = (image_width - target_width) // 2
+                        end_y = start_y + target_height
+                        end_x = start_x + target_width
+                        img = img[start_y:end_y, start_x:end_x]
 
                 else:
                     # if target_height > image_height, do padding of top and bottom, centered on image center
