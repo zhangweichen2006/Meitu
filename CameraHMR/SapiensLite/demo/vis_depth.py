@@ -189,6 +189,12 @@ def main():
     parser.add_argument(
         "--fp16", action="store_true", default=False, help="Model inference dtype"
     )
+    parser.add_argument(
+        "--preprocess",
+        choices=["resize", "crop_pad", "crop_resize"],
+        default="resize",
+        help="Preprocess strategy: resize (no crop), crop_pad, or crop_resize",
+    )
     args = parser.parse_args()
 
     if len(args.shape) == 1:
@@ -249,12 +255,30 @@ def main():
     BATCH_SIZE = args.batch_size
 
     n_batches = (len(image_names) + args.batch_size - 1) // args.batch_size
-    inference_dataset = AdhocImageDataset(
-        [os.path.join(input_dir, img_name) for img_name in image_names],
-        (input_shape[1], input_shape[2]),
-        mean=[123.5, 116.5, 103.5],
-        std=[58.5, 57.0, 57.5],
-    )
+    if args.preprocess == "crop_resize":
+        inference_dataset = AdhocImageDataset(
+            [os.path.join(input_dir, img_name) for img_name in image_names],
+            (input_shape[1], input_shape[2]),
+            mean=[123.5, 116.5, 103.5],
+            std=[58.5, 57.0, 57.5],
+            cropping=True,
+            no_padding=True,
+        )
+    elif args.preprocess == "crop_pad":
+        inference_dataset = AdhocImageDataset(
+            [os.path.join(input_dir, img_name) for img_name in image_names],
+            (input_shape[1], input_shape[2]),
+            mean=[123.5, 116.5, 103.5],
+            std=[58.5, 57.0, 57.5],
+            cropping=True,
+        )
+    else:
+        inference_dataset = AdhocImageDataset(
+            [os.path.join(input_dir, img_name) for img_name in image_names],
+            (input_shape[1], input_shape[2]),
+            mean=[123.5, 116.5, 103.5],
+            std=[58.5, 57.0, 57.5],
+        )
     inference_dataloader = torch.utils.data.DataLoader(
         inference_dataset,
         batch_size=args.batch_size,
@@ -270,7 +294,8 @@ def main():
         enumerate(inference_dataloader), total=len(inference_dataloader)
     ):
         valid_images_len = len(batch_imgs)
-        batch_imgs = fake_pad_images_to_batchsize(batch_imgs)
+        if args.preprocess != "crop_resize":
+            batch_imgs = fake_pad_images_to_batchsize(batch_imgs)
         result = inference_model(exp_model, batch_imgs, dtype=dtype)
         args_list = [
             (
