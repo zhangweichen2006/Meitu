@@ -37,13 +37,13 @@ class AdhocImageDataset(torch.utils.data.Dataset):
                 # outside image bounds, pad with zeros to keep the window centered.
                 image_height, image_width = img.shape[:2]
 
-                start_y = (image_height - target_height) // 2
-                start_x = (image_width - target_width) // 2
-                end_y = start_y + target_height
-                end_x = start_x + target_width
-
-
                 if image_height > image_width:
+                    # Portrait verticle image, crop and resize
+                    start_y = (image_height - target_height) // 2
+                    start_x = (image_width - target_width) // 2
+                    end_y = start_y + target_height
+                    end_x = start_x + target_width
+
                     pad_top = max(0, -start_y)
                     pad_left = max(0, -start_x)
                     pad_bottom = max(0, end_y - image_height)
@@ -73,7 +73,28 @@ class AdhocImageDataset(torch.utils.data.Dataset):
                         img = img[target_height//2:target_height//2+target_height, target_width//2:target_width//2+target_width]
                         # and scale back to target_width and target_height
                         img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LINEAR)
+                else:
+                    # Landscape horizontal image
+                    if self.resize:
+                        resize_ratio = target_width / image_width
+                        new_height = int(image_height * resize_ratio)
+                        img = cv2.resize(img, (target_width, new_height), interpolation=cv2.INTER_LINEAR)
 
+                        # After optional resize, center-crop if larger, pad if smaller
+                        cur_h, cur_w = img.shape[:2]
+
+                        # Vertical dimension: crop or pad to target_height
+                        if cur_h >= target_height:
+                            start_y = (cur_h - target_height) // 2
+                            end_y = start_y + target_height
+                            img = img[start_y:end_y, :]
+                            cur_h = target_height
+                        else:
+                            pad_total = target_height - cur_h
+                            pad_top = pad_total // 2
+                            pad_bottom = pad_total - pad_top
+                            img = cv2.copyMakeBorder(img, pad_top, pad_bottom, 0, 0, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+                            cur_h = target_height
 
         img = img.transpose(2, 0, 1)
         img = torch.from_numpy(img)
