@@ -217,6 +217,7 @@ def main():
         help="root of the output img file. "
         "Default not saving the visualization images.",
     )
+    parser.add_argument("--seg_dir", default=None, help="Path to seg dir")
     parser.add_argument(
         "--batch_size",
         "--batch-size",
@@ -260,8 +261,8 @@ def main():
     )
     parser.add_argument(
         "--preprocess",
-        choices=["resize", "crop_pad", "crop_resize", "pad_resize"],
-        default="pad_resize",
+        choices=["resize", "crop_pad", "crop_resize", "pad_resize", "zoom_to_3Dpt"],
+        default="crop_pad",
         help="Preprocess strategy: resize (no crop), crop_pad, pad_resize or crop_resize",
     )
     parser.add_argument(
