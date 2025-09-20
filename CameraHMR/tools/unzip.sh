@@ -2,12 +2,13 @@
 set -euo pipefail
 
 # Source directory containing .tar.gz archives
-SOURCE_DIR="/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/data/training-images/4dhuman/hmr2_training_data/dataset_tars/mpii-train"
+SOURCE_DIR="/picassox/tos-mtlab-train-base/human-body/weiche
+in-base/human-body/weichen.zhang/data/CameraHMR/dataset_tars/h36m-train"
 # "/picassox/tos-mtlab-train-base/human-body/llp1/datasets/paramatric_model_datasets/bedlam_dataset/bedlam_data_30fps/bedlam_png"
 
 # Destination root (inside this repository)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEST_ROOT="/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/data/training-images/mpii-pose/images/"
+DEST_ROOT="/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/data/training-images/Human36M"
 # "${SCRIPT_DIR}/data/training-images/30fps"
 
 # DEST_ROOT="/picassox/tos-mtlab-train-base/human-body/llp1/datasets/paramatric_model_datasets/bedlam_dataset/bedlam_data_30fps/bedlam_png"

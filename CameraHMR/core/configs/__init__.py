@@ -102,9 +102,9 @@ DATASET_FILES = {
     },
     'train': {
         'emdb-smpl': os.path.join(base_dir, 'data/test-labels/emdb_test.npz'),
-        'aic': os.path.join(base_dir, 'data//training-labels/aic-release.npz'),
-        'insta-1': os.path.join(base_dir, 'data//training-labels/insta1-release.npz'),
-        'insta-2': os.path.join(base_dir, 'data//training-labels/insta2-release.npz'),
+        'aic': os.path.join(base_dir, 'data/training-labels/aic-release.npz'),
+        'insta-1': os.path.join(base_dir, 'data/training-labels/insta1-release.npz'),
+        'insta-2': os.path.join(base_dir, 'data/training-labels/insta2-release.npz'),
         'coco-train': os.path.join(base_dir, 'data/training-labels/coco-release.npz'),
         'mpii-train': os.path.join(base_dir, 'data/training-labels/mpii-release.npz'),
 
