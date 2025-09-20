@@ -260,9 +260,9 @@ def main():
     )
     parser.add_argument(
         "--preprocess",
-        choices=["resize", "crop_pad", "crop_resize"],
-        default="resize",
-        help="Preprocess strategy (not applied to detector input)",
+        choices=["resize", "crop_pad", "crop_resize", "pad_resize"],
+        default="pad_resize",
+        help="Preprocess strategy: resize (no crop), crop_pad, pad_resize or crop_resize",
     )
     parser.add_argument(
         "--swapHW", action="store_true", default=False, help="swap height and width"

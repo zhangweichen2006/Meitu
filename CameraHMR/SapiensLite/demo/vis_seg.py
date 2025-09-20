@@ -155,9 +155,9 @@ def main():
     )
     parser.add_argument(
         "--preprocess",
-        choices=["resize", "crop_pad", "crop_resize"],
-        default="resize",
-        help="Preprocess strategy: resize (no crop), crop_pad, or crop_resize",
+        choices=["resize", "crop_pad", "crop_resize", "pad_resize"],
+        default="pad_resize",
+        help="Preprocess strategy: resize (no crop), crop_pad, pad_resize or crop_resize",
     )
     args = parser.parse_args()
 
@@ -215,7 +215,7 @@ def main():
             mean=[123.5, 116.5, 103.5],
             std=[58.5, 57.0, 57.5],
             cropping=True,
-            no_padding=True,
+            resize=True,
             out_names=out_names,
             swapHW=args.swapHW,
         )
@@ -229,6 +229,18 @@ def main():
             out_names=out_names,
             swapHW=args.swapHW,
         )
+    elif args.preprocess == "pad_resize":
+        inference_dataset = AdhocImageDataset(
+            image_names,
+            (input_shape[1], input_shape[2]),
+            mean=[123.5, 116.5, 103.5],
+            std=[58.5, 57.0, 57.5],
+            cropping=False,
+            resize=False,
+            out_names=out_names,
+            swapHW=args.swapHW,
+        )
+    # resize
     else:
         inference_dataset = AdhocImageDataset(
             image_names,
@@ -236,6 +248,7 @@ def main():
             mean=[123.5, 116.5, 103.5],
             std=[58.5, 57.0, 57.5],
             cropping=False,
+            resize=True,
             out_names=out_names,
             swapHW=args.swapHW,
         )

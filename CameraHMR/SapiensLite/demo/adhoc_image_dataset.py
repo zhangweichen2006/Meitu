@@ -8,7 +8,7 @@ import torch
 import cv2
 
 class AdhocImageDataset(torch.utils.data.Dataset):
-    def __init__(self, image_list, shape=None, mean=None, std=None, cropping=False, no_padding=False, out_names=None, swapHW=False):
+    def __init__(self, image_list, shape=None, mean=None, std=None, cropping=False, resize=False, out_names=None, swapHW=False):
         self.image_list = image_list
         self.out_names = out_names
         if shape:
@@ -20,7 +20,7 @@ class AdhocImageDataset(torch.utils.data.Dataset):
         self.mean = torch.tensor(mean) if mean else None
         self.std = torch.tensor(std) if std else None
         self.cropping = cropping
-        self.no_padding = no_padding
+        self.resize = resize
         self.swapHW = swapHW
     def __len__(self):
         return len(self.image_list)
@@ -33,76 +33,68 @@ class AdhocImageDataset(torch.utils.data.Dataset):
         if self.shape:
             target_height, target_width = self.shape
             if self.cropping:
-                # Center-crop to target (height, width) instead of resizing
+                # Center crop to (target_height, target_width). If the crop goes
+                # outside image bounds, pad with zeros to keep the window centered.
                 image_height, image_width = img.shape[:2]
 
-                # 竖屏图
-                if image_height > target_height:
-                    if image_height > image_width:
-                        image_height_ratio = image_height / target_height
-                        image_width_ratio = image_width / target_width
-                        if image_height_ratio > 1.5 or image_width_ratio > 1.5:
-                            # 竖屏图，且比例大于1.5，则resize较小ratio后进行中心裁剪
-                            ratio = min(image_height_ratio, image_width_ratio)
-                            new_height = int(image_height / ratio)
-                            new_width = int(image_width / ratio)
-                            img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
-                            start_y = (new_height - target_height) // 2
-                            start_x = (new_width - target_width) // 2
-                            end_y = start_y + target_height
-                            end_x = start_x + target_width
-                            img = img[start_y:end_y, start_x:end_x]
-                        else:
-                            # 竖屏图，且比例小于1.5，则直接crop中心区域
-                            img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LINEAR)
-                else:
-                    # 横屏图
-                    image_height_ratio = image_height / target_height
-                    image_width_ratio = image_width / target_width
+                if image_height > image_width:
+                    # Portrait verticle image, crop and resize
+                    start_y = (image_height - target_height) // 2
+                    start_x = (image_width - target_width) // 2
+                    end_y = start_y + target_height
+                    end_x = start_x + target_width
 
-                crop_height = min(target_height, image_height)
-                crop_width = min(target_width, image_width)
+                    pad_top = max(0, -start_y)
+                    pad_left = max(0, -start_x)
+                    pad_bottom = max(0, end_y - image_height)
+                    pad_right = max(0, end_x - image_width)
 
-                if self.no_padding:
-                    if target_height > image_height or target_width > image_width:
-                        # fix ratio crop
-                        ratio = max(target_height / image_height, target_width / image_width)
-                        new_height = int(target_height / ratio)
-                        new_width = int(target_width / ratio)
-
-                        # crop center new_height, new_width of the image
-                        start_y = (image_height - new_height) // 2
-                        start_x = (image_width - new_width) // 2
-                        end_y = start_y + new_height
-                        end_x = start_x + new_width
-                        img = img[start_y:end_y, start_x:end_x]
-
-                        # resize to target_height, target_width
-                        img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LINEAR)
-                    else:
-                        # just crop the middle target_height, target_width of the image
-                        start_y = (image_height - target_height) // 2
-                        start_x = (image_width - target_width) // 2
+                    if pad_top or pad_bottom or pad_left or pad_right:
+                        img = cv2.copyMakeBorder(
+                            img,
+                            pad_top,
+                            pad_bottom,
+                            pad_left,
+                            pad_right,
+                            cv2.BORDER_CONSTANT,
+                            value=[0, 0, 0],
+                        )
+                        # Adjust coordinates after padding
+                        start_y += pad_top
+                        start_x += pad_left
                         end_y = start_y + target_height
                         end_x = start_x + target_width
-                        img = img[start_y:end_y, start_x:end_x]
 
-                else:
-                    # if target_height > image_height, do padding of top and bottom, centered on image center
-                    start_y = (image_height - crop_height) // 2
-                    start_x = (image_width - crop_width) // 2
-                    end_y = start_y + crop_height
-                    end_x = start_x + crop_width
                     img = img[start_y:end_y, start_x:end_x]
+                    if self.resize:
+                        # boost two times
+                        img = cv2.resize(img, (target_width * 2, target_height * 2), interpolation=cv2.INTER_LINEAR)
+                        # just pick center part
+                        img = img[target_height//2:target_height//2+target_height, target_width//2:target_width//2+target_width]
+                        # and scale back to target_width and target_height
+                        img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LINEAR)
+                else:
+                    # Landscape horizontal image
+                    if self.resize:
+                        resize_ratio = target_width / image_width
+                        new_height = int(image_height * resize_ratio)
+                        img = cv2.resize(img, (target_width, new_height), interpolation=cv2.INTER_LINEAR)
 
-                    if not self.no_padding and target_height > image_height:
-                        padding_height = (target_height - image_height) // 2
-                        img = cv2.copyMakeBorder(img, padding_height, padding_height, 0, 0, cv2.BORDER_CONSTANT, value=[0, 0, 0])
-                    if target_width > image_width:
-                        padding_width = (target_width - image_width) // 2
-                        img = cv2.copyMakeBorder(img, 0, 0, padding_width, padding_width, cv2.BORDER_CONSTANT, value=[0, 0, 0])
-            else:
-                img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LINEAR)
+                        # After optional resize, center-crop if larger, pad if smaller
+                        cur_h, cur_w = img.shape[:2]
+
+                        # Vertical dimension: crop or pad to target_height
+                        if cur_h >= target_height:
+                            start_y = (cur_h - target_height) // 2
+                            end_y = start_y + target_height
+                            img = img[start_y:end_y, :]
+                            cur_h = target_height
+                        else:
+                            pad_total = target_height - cur_h
+                            pad_top = pad_total // 2
+                            pad_bottom = pad_total - pad_top
+                            img = cv2.copyMakeBorder(img, pad_top, pad_bottom, 0, 0, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+                            cur_h = target_height
 
         img = img.transpose(2, 0, 1)
         img = torch.from_numpy(img)
