@@ -130,8 +130,8 @@ def main():
     )
     parser.add_argument(
         "--preprocess",
-        choices=["resize", "crop_pad", "crop_resize", "pad_resize"],
-        default="pad_resize",
+        choices=["resize", "crop_pad", "crop_resize", "pad_resize", "zoom_to_3Dpt"],
+        default="crop_pad",
         help="Preprocess strategy: resize (no crop), crop_pad, pad_resize or crop_resize",
     )
     args = parser.parse_args()
@@ -202,6 +202,7 @@ def main():
             std=[58.5, 57.0, 57.5],
             cropping=True,
             resize=True,
+            zoom_to_3Dpt=False,
             out_names=out_names,
             swapHW=args.swapHW,
         )
@@ -212,6 +213,8 @@ def main():
             mean=[123.5, 116.5, 103.5],
             std=[58.5, 57.0, 57.5],
             cropping=True,
+            resize=False,
+            zoom_to_3Dpt=False,
             out_names=out_names,
             swapHW=args.swapHW,
         )
@@ -223,10 +226,23 @@ def main():
             std=[58.5, 57.0, 57.5],
             cropping=False,
             resize=False,
+            zoom_to_3Dpt=False,
             out_names=out_names,
             swapHW=args.swapHW,
         )
     # resize
+    elif args.preprocess == "zoom_to_3Dpt":
+        inference_dataset = AdhocImageDataset(
+            image_names,
+            (input_shape[1], input_shape[2]),
+            mean=[123.5, 116.5, 103.5],
+            std=[58.5, 57.0, 57.5],
+            cropping=True,
+            resize=False,
+            zoom_to_3Dpt=True,
+            out_names=out_names,
+            swapHW=args.swapHW,
+        )
     else:
         inference_dataset = AdhocImageDataset(
             image_names,
@@ -235,6 +251,7 @@ def main():
             std=[58.5, 57.0, 57.5],
             cropping=False,
             resize=True,
+            zoom_to_3Dpt=False,
             out_names=out_names,
             swapHW=args.swapHW,
         )

@@ -127,7 +127,7 @@ def main():
         "--batch_size",
         "--batch-size",
         type=int,
-        default=4,
+        default=32,
         help="Set batch size to do batch inference. ",
     )
     parser.add_argument(
@@ -156,7 +156,7 @@ def main():
     parser.add_argument(
         "--preprocess",
         choices=["resize", "crop_pad", "crop_resize", "pad_resize"],
-        default="pad_resize",
+        default="crop_pad",
         help="Preprocess strategy: resize (no crop), crop_pad, pad_resize or crop_resize",
     )
     args = parser.parse_args()

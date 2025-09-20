@@ -26,7 +26,7 @@
             "--batch_size",
             "1",
             "--preprocess",
-            "crop_resize",
+            "crop_pad",
             "--swapHW",
             "--redo"]
         }
