@@ -9,21 +9,26 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
+            "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
+            "python": "/home/cevin/miniconda3/envs/hper/bin/python",
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0,1",
                 "PYOPENGL_PLATFORM": "egl",
                 "LIBGL_ALWAYS_SOFTWARE": "1",
-                "DISPLAY": "localhost:12.0"
+                "PYTHONPATH": "${workspaceFolder}"
             },
             "args": ["SapiensLite/torchscript/seg/checkpoints/sapiens_1b/sapiens_1b_goliath_best_goliath_mIoU_7994_epoch_151_torchscript.pt2",
             "--input",
-            "data/training-images/20221010_3_1000_batch01hand_6fps",
+            "data/training-images/20221011_1_250_batch01hand_closeup_suburb_a_6fps/png",
             "--output_root",
-            "data/training-images-sapiens-seg/20221010_3_1000_batch01hand_6fps",
+            "data/training-images-sapiens-seg/20221011_1_250_batch01hand_closeup_suburb_a_6fps/png",
             "--batch_size",
             "1",
-            "--swapHW"]
+            "--preprocess",
+            "crop_pad",
+            "--swapHW",
+            "--redo"]
         }
     ]
 }
