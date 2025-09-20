@@ -298,6 +298,7 @@ def main():
                 batch_out_name
             )
         ]
+        print("inferencing:", args_list[0][2])
         img_save_pool.run_async(args_list)
 
     img_save_pool.finish()

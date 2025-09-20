@@ -56,6 +56,7 @@ class AdhocImageDataset(torch.utils.data.Dataset):
                             resize_ratio = min(target_height / image_height, target_width / image_width)
                             img = cv2.resize(img, (int(image_width * resize_ratio), int(image_height * resize_ratio)), interpolation=cv2.INTER_LINEAR)
 
+                    image_height, image_width = img.shape[:2]
                     start_y = (image_height - target_height) // 2
                     start_x = (image_width - target_width) // 2
                     end_y = start_y + target_height
@@ -119,13 +120,13 @@ class AdhocImageDataset(torch.utils.data.Dataset):
                     if cur_w >= target_width:
                         start_x = (cur_w - target_width) // 2
                         end_x = start_x + target_width
-                        img = img[start_x:end_x, :]
+                        img = img[:, start_x:end_x]
                         cur_w = target_width
                     else:
                         pad_total = target_width - cur_w
                         pad_left = pad_total // 2
                         pad_right = pad_total - pad_left
-                        img = cv2.copyMakeBorder(img, pad_left, pad_right, 0, 0, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+                        img = cv2.copyMakeBorder(img, 0, 0, pad_left, pad_right, cv2.BORDER_CONSTANT, value=[0, 0, 0])
                         cur_w = target_width
 
                     if self.zoom_to_3Dpt:
