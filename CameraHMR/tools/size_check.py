@@ -11,11 +11,20 @@ for root, dirs, files in os.walk(check_folder):
         if file.endswith(".jpg") or file.endswith(".png") or file.endswith(".jpeg"):
             ds_folder = root.replace(check_folder, "").split('/')[0]
             img = cv2.imread(os.path.join(root, file))
-            if ds_folder not in ds_size:
-                ds_size[ds_folder] = set([img.shape])
-                cv2.imwrite(os.path.join(ds_peak_folder, file), img)
-            else:
-                ds_size[ds_folder].add(img.shape)
+            if img is None:
+                print(f"Error reading image {file}")
+                continue
+            try:
+                if ds_folder not in ds_size:
+                    ds_size[ds_folder] = set([img.shape])
+                    # cv2.imwrite(os.path.join(ds_peak_folder, file), img)
+                    print("DS: {} new size: {}".format(ds_folder.split('/')[0], img.shape))
+                else:
+                    ds_size[ds_folder].add(img.shape)
+                    # print("DS: {} existing size: {}".format(ds_folder, img.shape))
+            except Exception as e:
+                print(f"Error processing sample {file}: {e}")
+                continue
 
 for ds_folder, size in ds_size.items():
     print(ds_folder, size)
