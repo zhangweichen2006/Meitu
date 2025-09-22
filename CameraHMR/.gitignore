@@ -18,3 +18,5 @@ logs*
 *.pt2
 *.gif
 *.png
+*.jpg
+*.npy
