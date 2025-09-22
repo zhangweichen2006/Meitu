@@ -28,6 +28,14 @@ import torch
 torch.set_float32_matmul_precision('medium')
 torch.manual_seed(0)
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+os.environ.setdefault("PROJECT_ROOT", str(PROJECT_ROOT))
+os.environ.setdefault("SAPIENS_NORMAL_CKPT", "SapiensLite/torchscript/normal/checkpoints/sapiens_2b/sapiens_2b_normal_render_people_epoch_70_torchscript.pt2")
+os.environ.setdefault("VGGT_CKPT", "../VGGT/vggt_1B_commercial.pt")
+os.environ.setdefault("PI3_CKPT", "../Pi3/model.safetensors")
+
+
+
 @pl.utilities.rank_zero.rank_zero_only
 def save_configs(model_cfg: CfgNode, dataset_cfg: CfgNode, rootdir: str):
     Path(rootdir).mkdir(parents=True, exist_ok=True)

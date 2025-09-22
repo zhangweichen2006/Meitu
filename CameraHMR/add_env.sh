@@ -1,1 +1,1 @@
-conda activate /picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/env/envs/mapanyhuman
+conda activate /picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/env/envs/mapanything

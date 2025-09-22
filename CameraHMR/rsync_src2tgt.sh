@@ -2,10 +2,8 @@ set -euo pipefail
 SCRIPT="$(basename "$0")"
 TAG="$SCRIPT[$(hostname -s):$$]"
 
-FOLDER=test-images-sapiens-seg-DirectResize
-SUBFOLDER=*
-SRC_FOLDER=/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/data/test-images-sapiens-seg-DirectResize/test-images-sapiens-normals-DirectResize-local
-TGT_FOLDER=/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/data/test-images-sapiens-normals-DirectResize
+SRC_FOLDER=/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/3DPW
+TGT_FOLDER=/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/data/test-images-sapiens-normals-OrgPadCrop-local/3DPW
 # VEPFS_HYPERLINK=/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/data/${FOLDER}
 
 # check folder exists

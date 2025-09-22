@@ -12,21 +12,16 @@
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "env": {
-                "CUDA_VISIBLE_DEVICES": "0",
+                "CUDA_VISIBLE_DEVICES": "5",
                 "PYOPENGL_PLATFORM": "egl",
-                "LIBGL_ALWAYS_SOFTWARE": "1",
                 "PYTHONPATH": "${workspaceFolder}"
             },
-            "args": ["SapiensLite/torchscript/normal/checkpoints/sapiens_2b/sapiens_2b_normal_render_people_epoch_70_torchscript.pt2",
-            "--input",
-            "data/test-images/3DPW",
-            "--output_root",
-            "data/test-images-sapiens-normals-OrgPadCrop-local/3DPW",
-            "--batch_size",
-            "1"]
+            "args": ["data=train", "experiment=camerahmr_multi", "exp_name=train_run1", "trainer.devices=1", "trainer.accelerator=gpu"]
         }
     ]
 }
+// data=train experiment=camerahmr exp_name=train_run1
+// trainer=ddp trainer.accelerator=gpu trainer.devices=2
 // --input data/test-images/3DPW/imageFiles/downtown_walkBridge_01 \
 // --output_root data/test-images-sapiens-normals-crop-small/3DPW/imageFiles/downtown_walkBridge_01 \
 

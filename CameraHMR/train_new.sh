@@ -1,3 +1,3 @@
-CUDA_VISIBLE_DEVICES=4,5 python process_foundation_input_features.py data=train experiment=camerahmr exp_name=train_run1  trainer=ddp trainer.accelerator=gpu trainer.devices=2
+CUDA_VISIBLE_DEVICES=4,5 python process_foundation_input_features.py data=traintest experiment=camerahmr_multi exp_name=train_run1  trainer=ddp trainer.accelerator=gpu trainer.devices=2
 
 # CUDA_VISIBLE_DEVICES=4,5 python train.py data=train experiment=camerahmr exp_name=train_run1  trainer=ddp trainer.accelerator=gpu trainer.devices=2

@@ -10,7 +10,7 @@ safetensors
 tensorboard
 tqdm
 torchaudio
-torch~=2.6.0
+torch
 torchvision
 trimesh
 uniception

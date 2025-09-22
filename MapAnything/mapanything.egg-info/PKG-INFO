@@ -18,7 +18,7 @@ Requires-Dist: safetensors
 Requires-Dist: tensorboard
 Requires-Dist: tqdm
 Requires-Dist: torchaudio
-Requires-Dist: torch~=2.6.0
+Requires-Dist: torch
 Requires-Dist: torchvision
 Requires-Dist: trimesh
 Requires-Dist: uniception
