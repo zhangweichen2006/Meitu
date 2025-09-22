@@ -17,3 +17,4 @@ data/
 *.HEIC
 sapiens/.conda/*
 env*
+*.whl
