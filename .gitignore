@@ -18,3 +18,14 @@ data/
 sapiens/.conda/*
 env*
 *.whl
+*.jpg
+*.png
+*.jpeg
+*.webp
+*.gif
+*.bmp
+*.tiff
+*.ico
+*.svg
+*.webp
+*.gif

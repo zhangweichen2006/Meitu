@@ -19,11 +19,12 @@ log = get_pylogger(__name__)
 
 
 class DatasetVal(Dataset):
-    def __init__(self, cfg, dataset, is_train=False):
+    def __init__(self, cfg, dataset, is_train=False, version='test'):
         super(DatasetVal, self).__init__()
 
         self.dataset = dataset
         self.is_train = is_train
+        self.version = version
         self.cfg = cfg
         self.IMG_SIZE = cfg.MODEL.IMAGE_SIZE
         self.BBOX_SHAPE = cfg.MODEL.get('BBOX_SHAPE', None)
@@ -38,7 +39,7 @@ class DatasetVal(Dataset):
         }[cfg.DATASETS.get('BORDER_MODE', 'constant')]
 
         self.img_dir = DATASET_FOLDERS[dataset]
-        self.data = np.load(DATASET_FILES[is_train][dataset], allow_pickle=True)
+        self.data = np.load(DATASET_FILES[version][dataset], allow_pickle=True)
         self.imgname = self.data['imgname']
         self.scale = self.data['scale']
         self.center = self.data['center']
