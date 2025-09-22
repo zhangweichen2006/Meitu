@@ -1,0 +1,9 @@
+*.txt
+*.egg-info
+*.egg
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
