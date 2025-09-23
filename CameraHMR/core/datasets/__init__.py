@@ -8,6 +8,7 @@ from ..configs import DATASET_FOLDERS, DATASET_FILES
 from .dataset_train import DatasetTrain
 from .dataset_val import DatasetVal
 from .dataset_traintest import DatasetTrainTest
+from .dataset_wai import DatasetWAI
 
 class DataModule(pl.LightningDataModule):
 
@@ -43,14 +44,20 @@ class DataModule(pl.LightningDataModule):
             # Filter out datasets whose image folder or label file does not exist
             valid_datasets = []
             for ds in dataset_names:
-                img_dir = DATASET_FOLDERS.get(ds)
-                lbl_map = DATASET_FILES['train'] if isinstance(DATASET_FILES, list) or isinstance(DATASET_FILES, dict) else DATASET_FILES
-                lbl_file = lbl_map.get(ds) if isinstance(lbl_map, dict) else None
-                if img_dir and os.path.isdir(img_dir) and lbl_file and os.path.isfile(lbl_file):
+                if ds.startswith('wai:'):
                     valid_datasets.append(ds)
                 else:
-                    print(f"Train Dataset {ds} does not exist")
-            dataset_list = [DatasetTrain(self.cfg, ds, version='train') for ds in valid_datasets]
+                    img_dir = DATASET_FOLDERS.get(ds)
+                    lbl_map = DATASET_FILES['train'] if isinstance(DATASET_FILES, list) or isinstance(DATASET_FILES, dict) else DATASET_FILES
+                    lbl_file = lbl_map.get(ds) if isinstance(lbl_map, dict) else None
+                    if img_dir and os.path.isdir(img_dir) and lbl_file and os.path.isfile(lbl_file):
+                        valid_datasets.append(ds)
+                    else:
+                        print(f"Train Dataset {ds} does not exist")
+            dataset_list = [
+                (DatasetWAI(self.cfg, ds, version='train', is_train=True) if ds.startswith('wai:') else DatasetTrain(self.cfg, ds, version='train'))
+                for ds in valid_datasets
+            ]
             train_ds = torch.utils.data.ConcatDataset(dataset_list)
             return train_ds
         else:
@@ -60,14 +67,20 @@ class DataModule(pl.LightningDataModule):
         dataset_names = self.cfg.DATASETS.VAL_DATASETS.split('_')
         valid_datasets = []
         for ds in dataset_names:
-            img_dir = DATASET_FOLDERS.get(ds)
-            lbl_map = DATASET_FILES['test'] if isinstance(DATASET_FILES, list) or isinstance(DATASET_FILES, dict) else DATASET_FILES
-            lbl_file = lbl_map.get(ds) if isinstance(lbl_map, dict) else None
-            if img_dir and os.path.isdir(img_dir) and lbl_file and os.path.isfile(lbl_file):
+            if ds.startswith('wai:'):
                 valid_datasets.append(ds)
             else:
-                print(f"Val Dataset {ds} does not exist")
-        dataset_list = [DatasetVal(self.cfg, ds, version='test') for ds in valid_datasets]
+                img_dir = DATASET_FOLDERS.get(ds)
+                lbl_map = DATASET_FILES['test'] if isinstance(DATASET_FILES, list) or isinstance(DATASET_FILES, dict) else DATASET_FILES
+                lbl_file = lbl_map.get(ds) if isinstance(lbl_map, dict) else None
+                if img_dir and os.path.isdir(img_dir) and lbl_file and os.path.isfile(lbl_file):
+                    valid_datasets.append(ds)
+                else:
+                    print(f"Val Dataset {ds} does not exist")
+        dataset_list = [
+            (DatasetWAI(self.cfg, ds, version='test', is_train=False) if ds.startswith('wai:') else DatasetVal(self.cfg, ds, version='test'))
+            for ds in valid_datasets
+        ]
         return dataset_list
 
     def train_test_dataset_prepare(self, **kwargs):
@@ -77,14 +90,20 @@ class DataModule(pl.LightningDataModule):
             dataset_names = self.cfg.DATASETS.VAL_DATASETS.split('_')
         valid_datasets = []
         for ds in dataset_names:
-            img_dir = DATASET_FOLDERS.get(ds)
-            lbl_map = DATASET_FILES['traintest'] if isinstance(DATASET_FILES, list) or isinstance(DATASET_FILES, dict) else DATASET_FILES
-            lbl_file = lbl_map.get(ds) if isinstance(lbl_map, dict) else None
-            if img_dir and os.path.isdir(img_dir) and lbl_file and os.path.isfile(lbl_file):
+            if ds.startswith('wai:'):
                 valid_datasets.append(ds)
             else:
-                print(f"Train (Train Test) Dataset {ds} does not exist")
-        dataset_list = [DatasetTrainTest(self.cfg, ds, **kwargs) for ds in valid_datasets]
+                img_dir = DATASET_FOLDERS.get(ds)
+                lbl_map = DATASET_FILES['traintest'] if isinstance(DATASET_FILES, list) or isinstance(DATASET_FILES, dict) else DATASET_FILES
+                lbl_file = lbl_map.get(ds) if isinstance(lbl_map, dict) else None
+                if img_dir and os.path.isdir(img_dir) and lbl_file and os.path.isfile(lbl_file):
+                    valid_datasets.append(ds)
+                else:
+                    print(f"Train (Train Test) Dataset {ds} does not exist")
+        dataset_list = [
+            (DatasetWAI(self.cfg, ds, version='traintest', is_train=False) if ds.startswith('wai:') else DatasetTrainTest(self.cfg, ds, version='traintest', **kwargs))
+            for ds in valid_datasets
+        ]
         return dataset_list
 
     def train_dataloader(self):
