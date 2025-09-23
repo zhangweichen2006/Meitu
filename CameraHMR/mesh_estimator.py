@@ -275,7 +275,13 @@ class HumanMeshEstimator:
             else:
                 f_val = float(focal_length_[0]) if isinstance(focal_length_, torch.Tensor) else float(focal_length_)
             focal_length = (f_val, f_val)
-            pred_vertices_array = (output_vertices + output_cam_trans.unsqueeze(1)).detach().cpu().numpy()
+            # FIX BUG IN CAMERA TRANS RENDERER
+            # pred_vertices_array = (output_vertices + output_cam_trans.unsqueeze
+            # (1)).detach().cpu().numpy()
+            # Match coordinate convention used in renderer_cam: flip x-translation
+            cam_t = output_cam_trans.clone()
+            cam_t[:, 0] *= -1.0
+            pred_vertices_array = (output_vertices + cam_t.unsqueeze(1)).detach().cpu().numpy()
             renderer = Renderer(focal_length=focal_length[0], img_w=img_w, img_h=img_h, faces=self.smpl_model.faces, same_mesh_color=self.same_mesh_color, mesh_opacity=self.mesh_opacity)
             bg_img_rgb = cv2.cvtColor(img_cv2.copy(), cv2.COLOR_BGR2RGB)
             front_view_rgb = renderer.render_front_view(pred_vertices_array, bg_img_rgb=bg_img_rgb)
