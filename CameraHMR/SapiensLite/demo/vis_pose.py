@@ -35,6 +35,7 @@ from pose_utils import nms, top_down_affine_transform, udp_decode
 from tqdm import tqdm
 
 from worker_pool import WorkerPool
+from revert_utils import revert_npy
 
 try:
     from mmdet.apis import inference_detector, init_detector
@@ -92,7 +93,7 @@ def batch_inference_topdown(
 
 
 def img_save_and_vis(
-    img, results, output_path, input_shape, heatmap_scale, kpt_colors, kpt_thr, radius, skeleton_info, thickness
+    orig_image, results, output_path, output_imgmatch_path, input_shape, heatmap_scale, kpt_colors, kpt_thr, radius, skeleton_info, thickness
 ):
     # pred_instances_list = split_instances(result)
     heatmap = results["heatmaps"]
@@ -179,6 +180,27 @@ def img_save_and_vis(
 
     cv2.imwrite(output_path, img)
 
+    # Save a simple visibility mask (pose coverage) in processed space and revert for imgmatch
+    h, w = img.shape[:2]
+    coverage = np.zeros((h, w), dtype=np.uint8)
+    for kpts, score in zip(instance_keypoints, instance_scores):
+        for kid, kpt in enumerate(kpts):
+            if score[kid] >= kpt_thr:
+                x = int(np.clip(kpt[0], 0, w - 1))
+                y = int(np.clip(kpt[1], 0, h - 1))
+                cv2.circle(coverage, (x, y), int(max(1, radius)), 255, -1)
+    proc_npy = output_path.replace('.jpg', '.npy').replace('.png', '.npy').replace('.jpeg', '.npy')
+    np.save(proc_npy, coverage)
+
+    reverted_cov = revert_npy(proc_npy, orig_image, mode="resize")
+    output_imgmatch_npy = output_imgmatch_path.replace('.jpg', '.npy').replace('.png', '.npy').replace('.jpeg', '.npy')
+    np.save(output_imgmatch_npy, reverted_cov)
+
+    # Visualize reverted coverage next to original image
+    cov_vis = cv2.applyColorMap((reverted_cov > 0).astype(np.uint8) * 255, cv2.COLORMAP_VIRIDIS)
+    vis2 = np.concatenate([orig_image, cov_vis], axis=1)
+    cv2.imwrite(output_imgmatch_path, vis2)
+
 def fake_pad_images_to_batchsize(imgs):
     return F.pad(imgs, (0, 0, 0, 0, 0, 0, 0, BATCH_SIZE - imgs.shape[0]), value=0)
 
@@ -216,6 +238,9 @@ def main():
         default="",
         help="root of the output img file. "
         "Default not saving the visualization images.",
+    )
+    parser.add_argument(
+        "--output_imgmatch_root", "--output-imgmatch-root", default=None, help="Path to output imgmatch dir"
     )
     parser.add_argument("--seg_dir", default=None, help="Path to seg dir")
     parser.add_argument(
@@ -362,6 +387,11 @@ def main():
     if not os.path.exists(args.output_root):
         os.makedirs(args.output_root)
 
+    if args.output_imgmatch_root is None:
+        raise ValueError("--output_imgmatch_root must be specified")
+    if not os.path.exists(args.output_imgmatch_root):
+        os.makedirs(args.output_imgmatch_root, exist_ok=True)
+
     # Filter by --redo (skip images with existing outputs)
     to_process = []
     for fp in all_files:
@@ -476,9 +506,10 @@ def main():
 
         args_list = [
             (
-                i.numpy(),
+                orig_i.numpy(),
                 r,
                 os.path.join(args.output_root, os.path.basename(img_name)),
+                os.path.join(args.output_imgmatch_root, os.path.basename(img_name)),
                 (input_shape[2], input_shape[1]),
                 scale,
                 KPTS_COLORS,
@@ -487,7 +518,7 @@ def main():
                 SKELETON_INFO,
                 args.thickness,
             )
-            for i, r, img_name in zip(
+            for orig_i, r, img_name in zip(
                 batch_orig_imgs[:valid_images_len],
                 batched_results[:valid_images_len],
                 batch_image_name,

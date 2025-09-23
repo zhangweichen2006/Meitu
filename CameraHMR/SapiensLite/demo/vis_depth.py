@@ -21,6 +21,7 @@ from adhoc_image_dataset import AdhocImageDataset
 from tqdm import tqdm
 
 from worker_pool import WorkerPool
+from revert_utils import revert_npy
 
 torchvision.disable_beta_transforms_warning()
 
@@ -69,9 +70,9 @@ def load_and_preprocess(img, shape):
     return orig_img, img
 
 
-def img_save_and_viz(image, result, output_path, seg_dir):
+def img_save_and_viz(orig_image, proc_image, result, output_path, output_imgmatch_path, seg_dir):
     seg_logits = F.interpolate(
-        result.unsqueeze(0), size=image.shape[:2], mode="bilinear"
+        result.unsqueeze(0), size=proc_image.shape[:2], mode="bilinear"
     ).squeeze(0)
 
     depth_map = seg_logits.data.float().numpy()[0]  ## H x W
@@ -154,8 +155,50 @@ def img_save_and_viz(image, result, output_path, seg_dir):
     ## RGB to BGR for cv2
     normal_from_depth = normal_from_depth[:, :, ::-1]
 
-    vis_image = np.concatenate([image, processed_depth, normal_from_depth], axis=1)
+    vis_image = np.concatenate([proc_image, processed_depth, normal_from_depth], axis=1)
     cv2.imwrite(output_path, vis_image)
+
+    # Revert depth to original and save to imgmatch path
+    reverted_depth = revert_npy(save_path, orig_image, mode="resize")
+    output_imgmatch_npy = (
+        output_imgmatch_path.replace(".jpg", ".png").replace(".jpeg", ".png").replace(".png", ".npy")
+    )
+    np.save(output_imgmatch_npy, reverted_depth)
+    # Visualize reverted depth similarly
+    mask = ~np.isnan(reverted_depth)
+    processed_depth2 = np.full((mask.shape[0], mask.shape[1], 3), 100, dtype=np.uint8)
+    if mask.any():
+        depth_foreground = reverted_depth[mask]
+        min_val, max_val = np.nanmin(depth_foreground), np.nanmax(depth_foreground)
+        if max_val > min_val:
+            depth_normalized_foreground = 1 - ((depth_foreground - min_val) / (max_val - min_val))
+        else:
+            depth_normalized_foreground = np.zeros_like(depth_foreground)
+        depth_normalized_foreground = (depth_normalized_foreground * 255.0).astype(np.uint8)
+        depth_colored_foreground = cv2.applyColorMap(depth_normalized_foreground, cv2.COLORMAP_INFERNO)
+        depth_colored_foreground = depth_colored_foreground.reshape(-1, 3)
+        processed_depth2[mask] = depth_colored_foreground
+
+    # normals from reverted depth
+    depth_normalized2 = np.full(mask.shape, np.inf)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        if mask.any():
+            foreground = reverted_depth[mask]
+            min_val2, max_val2 = np.nanmin(foreground), np.nanmax(foreground)
+            if max_val2 > min_val2:
+                depth_normalized2[mask] = 1 - ((foreground - min_val2) / (max_val2 - min_val2))
+            else:
+                depth_normalized2[mask] = 0
+    kernel_size = 7
+    grad_x = cv2.Sobel(depth_normalized2.astype(np.float32), cv2.CV_32F, 1, 0, ksize=kernel_size)
+    grad_y = cv2.Sobel(depth_normalized2.astype(np.float32), cv2.CV_32F, 0, 1, ksize=kernel_size)
+    z = np.full(grad_x.shape, -1)
+    normals2 = np.dstack((-grad_x, -grad_y, z))
+    normals_mag2 = np.linalg.norm(normals2, axis=2, keepdims=True)
+    normals_normalized2 = np.nan_to_num(normals2 / (normals_mag2 + 1e-5), nan=-1, posinf=-1, neginf=-1)
+    normal_from_depth2 = ((normals_normalized2 + 1) / 2 * 255).astype(np.uint8)[:, :, ::-1]
+    vis_image2 = np.concatenate([orig_image, processed_depth2, normal_from_depth2], axis=1)
+    cv2.imwrite(output_imgmatch_path, vis_image2)
 
 def load_model(checkpoint, use_torchscript=False):
     if use_torchscript:
@@ -171,6 +214,9 @@ def main():
         "--output_root", "--output-root", default=None, help="Path to output dir"
     )
     parser.add_argument("--seg_dir", default=None, help="Path to seg dir")
+    parser.add_argument(
+        "--output_imgmatch_root", "--output-imgmatch-root", default=None, help="Path to output imgmatch dir"
+    )
     parser.add_argument("--device", default="cuda:0", help="Device used for inference")
     parser.add_argument(
         "--batch_size",
@@ -233,6 +279,7 @@ def main():
     input = args.input
     image_names = []
     out_names = []
+    out_imgmatch_names = []
 
     # Build image list and corresponding output paths mirroring directory structure
     for root, dirs, files in os.walk(input):
@@ -244,6 +291,10 @@ def main():
                     image_names.append(full_in)
                     out_names.append(full_out)
                     os.makedirs(os.path.dirname(full_out), exist_ok=True)
+                full_out_imgmatch = full_in.replace(args.input, args.output_imgmatch_root)
+                if not os.path.exists(full_out_imgmatch) or args.redo:
+                    out_imgmatch_names.append(full_out_imgmatch)
+                    os.makedirs(os.path.dirname(full_out_imgmatch), exist_ok=True)
 
     if not os.path.exists(args.output_root):
         os.makedirs(args.output_root)
@@ -261,6 +312,7 @@ def main():
             cropping=True,
             resize=True,
             out_names=out_names,
+            out_imgmatch_names=out_imgmatch_names,
             swapHW=args.swapHW,
         )
     elif args.preprocess == "crop_pad":
@@ -271,6 +323,7 @@ def main():
             std=[58.5, 57.0, 57.5],
             cropping=True,
             out_names=out_names,
+            out_imgmatch_names=out_imgmatch_names,
             swapHW=args.swapHW,
         )
     elif args.preprocess == "pad_resize":
@@ -283,6 +336,7 @@ def main():
             resize=False,
             zoom_to_3Dpt=False,
             out_names=out_names,
+            out_imgmatch_names=out_imgmatch_names,
             swapHW=args.swapHW,
         )
     elif args.preprocess == "zoom_to_3Dpt":
@@ -295,6 +349,7 @@ def main():
             resize=False,
             zoom_to_3Dpt=True,
             out_names=out_names,
+            out_imgmatch_names=out_imgmatch_names,
             swapHW=args.swapHW,
         )
     # resize
@@ -321,7 +376,7 @@ def main():
     img_save_pool = WorkerPool(
         img_save_and_viz, processes=max(min(args.batch_size, cpu_count()), 1)
     )
-    for batch_idx, (batch_image_name, batch_out_name, batch_orig_imgs, batch_imgs) in tqdm(
+    for batch_idx, (batch_image_name, batch_out_name, batch_out_imgmatch_name, batch_orig_imgs, batch_imgs) in tqdm(
         enumerate(inference_dataloader), total=len(inference_dataloader)
     ):
         # Convert cropped, normalized tensors back to uint8 BGR images for saving
@@ -341,15 +396,19 @@ def main():
         result = inference_model(exp_model, batch_imgs, dtype=dtype)
         args_list = [
             (
+                o,
                 i,
                 r,
                 out_name,
+                out_imgmatch_name,
                 args.seg_dir,
             )
-            for i, r, out_name in zip(
+            for o, i, r, out_name, out_imgmatch_name in zip(
+                batch_orig_imgs,
                 cropped_images_np[:valid_images_len],
                 result[:valid_images_len],
                 batch_out_name,
+                batch_out_imgmatch_name,
             )
         ]
         img_save_pool.run_async(args_list)

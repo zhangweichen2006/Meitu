@@ -23,6 +23,7 @@ from classes_and_palettes import GOLIATH_CLASSES, GOLIATH_PALETTE
 from tqdm import tqdm
 
 from worker_pool import WorkerPool
+from revert_utils import revert_npy
 
 torchvision.disable_beta_transforms_warning()
 
@@ -58,7 +59,7 @@ def fake_pad_images_to_batchsize(imgs):
 
 
 def img_save_and_viz(
-    image, result, output_path, classes, palette, title=None, opacity=0.5, threshold=0.3,
+    orig_image, proc_image, result, output_path, output_imgmatch_path, classes, palette, title=None, opacity=0.5, threshold=0.3,
 ):
     output_file = (
         output_path.replace(".jpg", ".png")
@@ -71,11 +72,11 @@ def img_save_and_viz(
         .replace(".png", "_seg.npy")
     )
 
-    if isinstance(image, torch.Tensor):
-        image = image.cpu().numpy()  ## bgr image
+    if isinstance(proc_image, torch.Tensor):
+        proc_image = proc_image.cpu().numpy()  ## bgr image
 
     seg_logits = F.interpolate(
-        result.unsqueeze(0), size=image.shape[:2], mode="bilinear"
+        result.unsqueeze(0), size=proc_image.shape[:2], mode="bilinear"
     ).squeeze(0)
 
     if seg_logits.shape[0] > 1:
@@ -99,15 +100,44 @@ def img_save_and_viz(
 
     colors = [palette[label] for label in labels]
 
-    mask = np.zeros_like(image)
+    mask = np.zeros_like(proc_image)
     for label, color in zip(labels, colors):
         mask[sem_seg == label, :] = color
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image_rgb = cv2.cvtColor(proc_image, cv2.COLOR_BGR2RGB)
     vis_image = (image_rgb * (1 - opacity) + mask * opacity).astype(np.uint8)
 
     vis_image = cv2.cvtColor(vis_image, cv2.COLOR_RGB2BGR)
-    vis_image = np.concatenate([image, vis_image], axis=1)
+    vis_image = np.concatenate([proc_image, vis_image], axis=1)
     cv2.imwrite(output_path, vis_image)
+
+    # Revert processed npy to original resolution and save visualization to output_imgmatch_path
+    reverted_seg = revert_npy(output_seg_file, orig_image, mode="resize")
+    if reverted_seg.ndim == 3:
+        # If returned HWC with channels, convert to single channel labels by argmax
+        reverted_labels = reverted_seg.argmax(axis=-1)
+    else:
+        # Already single channel class map
+        reverted_labels = reverted_seg.astype(np.int32)
+
+    output_imgmatch_npy = (
+        output_imgmatch_path.replace(".jpg", ".png").replace(".jpeg", ".png").replace(".png", ".npy")
+    )
+    np.save(output_imgmatch_npy, reverted_labels)
+
+    # Build palette overlay on original image
+    mmask = np.zeros_like(orig_image)
+    ids = np.unique(reverted_labels)[::-1]
+    legal_indices = ids < len(classes)
+    ids = ids[legal_indices]
+    labels = np.array(ids, dtype=np.int64)
+    colors = [palette[label] for label in labels]
+    for label, color in zip(labels, colors):
+        mmask[reverted_labels == label, :] = color
+    image_rgb2 = cv2.cvtColor(orig_image, cv2.COLOR_BGR2RGB)
+    vis_image2 = (image_rgb2 * (1 - opacity) + mmask * opacity).astype(np.uint8)
+    vis_image2 = cv2.cvtColor(vis_image2, cv2.COLOR_RGB2BGR)
+    vis_image2 = np.concatenate([orig_image, vis_image2], axis=1)
+    cv2.imwrite(output_imgmatch_path, vis_image2)
 
 def load_model(checkpoint, use_torchscript=False):
     if use_torchscript:
@@ -121,6 +151,9 @@ def main():
     parser.add_argument("--input", help="Input image dir")
     parser.add_argument(
         "--output_root", "--output-root", default=None, help="Path to output dir"
+    )
+    parser.add_argument(
+        "--output_imgmatch_root", "--output-imgmatch-root", default=None, help="Path to output imgmatch dir"
     )
     parser.add_argument("--seg_dir", default=None, help="Path to seg dir")
     parser.add_argument("--device", default="cuda:0", help="Device used for inference")
@@ -192,6 +225,11 @@ def main():
     input = args.input
     image_names = []
     out_names = []
+    out_imgmatch_names = []
+    if args.output_imgmatch_root is None:
+        raise ValueError("--output_imgmatch_root must be specified")
+    if not os.path.exists(args.output_imgmatch_root):
+        os.makedirs(args.output_imgmatch_root, exist_ok=True)
 
     # Build image list and corresponding output paths mirroring directory structure
     for root, dirs, files in os.walk(input):
@@ -203,6 +241,10 @@ def main():
                     image_names.append(full_in)
                     out_names.append(full_out)
                     os.makedirs(os.path.dirname(full_out), exist_ok=True)
+                full_out_imgmatch = full_in.replace(args.input, args.output_imgmatch_root)
+                if not os.path.exists(full_out_imgmatch) or args.redo:
+                    out_imgmatch_names.append(full_out_imgmatch)
+                    os.makedirs(os.path.dirname(full_out_imgmatch), exist_ok=True)
 
     global BATCH_SIZE
     BATCH_SIZE = args.batch_size
@@ -219,6 +261,7 @@ def main():
             resize=True,
             zoom_to_3Dpt=False,
             out_names=out_names,
+            out_imgmatch_names=out_imgmatch_names,
             swapHW=args.swapHW,
         )
     elif args.preprocess == "crop_pad":
@@ -231,6 +274,7 @@ def main():
             resize=False,
             zoom_to_3Dpt=False,
             out_names=out_names,
+            out_imgmatch_names=out_imgmatch_names,
             swapHW=args.swapHW,
         )
     elif args.preprocess == "pad_resize":
@@ -243,6 +287,7 @@ def main():
             resize=False,
             zoom_to_3Dpt=False,
             out_names=out_names,
+            out_imgmatch_names=out_imgmatch_names,
             swapHW=args.swapHW,
         )
     elif args.preprocess == "zoom_to_3Dpt":
@@ -255,6 +300,7 @@ def main():
             resize=False,
             zoom_to_3Dpt=True,
             out_names=out_names,
+            out_imgmatch_names=out_imgmatch_names,
             swapHW=args.swapHW,
         )
     # resize
@@ -268,6 +314,7 @@ def main():
             resize=True,
             zoom_to_3Dpt=False,
             out_names=out_names,
+            out_imgmatch_names=out_imgmatch_names,
             swapHW=args.swapHW,
         )
     inference_dataloader = torch.utils.data.DataLoader(
@@ -281,7 +328,7 @@ def main():
     img_save_pool = WorkerPool(
         img_save_and_viz, processes=max(min(args.batch_size, cpu_count()), 1)
     )
-    for batch_idx, (batch_image_name, batch_out_name, batch_orig_imgs, batch_imgs) in tqdm(
+    for batch_idx, (batch_image_name, batch_out_name, batch_out_imgmatch_name, batch_orig_imgs, batch_imgs) in tqdm(
         enumerate(inference_dataloader), total=len(inference_dataloader)
     ):
         # Convert cropped, normalized tensors back to uint8 BGR images for saving
@@ -302,18 +349,22 @@ def main():
 
         args_list = [
             (
+                o,
                 i,
                 r,
                 out_name,
+                out_imgmatch_name,
                 GOLIATH_CLASSES,
                 GOLIATH_PALETTE,
                 args.title,
                 args.opacity,
             )
-            for i, r, out_name in zip(
+            for o, i, r, out_name, out_imgmatch_name in zip(
+                batch_orig_imgs,
                 cropped_images_np[:valid_images_len],
                 result[:valid_images_len],
                 batch_out_name,
+                batch_out_imgmatch_name,
             )
         ]
         img_save_pool.run_async(args_list)

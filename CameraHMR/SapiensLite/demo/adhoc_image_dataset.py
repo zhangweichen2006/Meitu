@@ -8,9 +8,10 @@ import torch
 import cv2
 
 class AdhocImageDataset(torch.utils.data.Dataset):
-    def __init__(self, image_list, shape=None, mean=None, std=None, cropping=False, resize=False, out_names=None, swapHW=False, zoom_to_3Dpt=False):
+    def __init__(self, image_list, shape=None, mean=None, std=None, cropping=False, resize=False, out_names=None, out_imgmatch_names=None, swapHW=False, zoom_to_3Dpt=False):
         self.image_list = image_list
         self.out_names = out_names
+        self.out_imgmatch_names = out_imgmatch_names
         if shape:
             assert len(shape) == 2
         if mean or std:
@@ -150,8 +151,11 @@ class AdhocImageDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         orig_img_dir = self.image_list[idx]
-        out_img_dir = self.out_names[idx]
         orig_img = cv2.imread(orig_img_dir)
-        # orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
         img = self._preprocess(orig_img)
-        return orig_img_dir, out_img_dir, orig_img, img
+        # If output names are provided, return them for saving; else return only image triplet
+        if self.out_names is not None and self.out_imgmatch_names is not None:
+            out_img_dir = self.out_names[idx]
+            out_imgmatch_dir = self.out_imgmatch_names[idx]
+            return orig_img_dir, out_img_dir, out_imgmatch_dir, orig_img, img
+        return orig_img_dir, orig_img, img
