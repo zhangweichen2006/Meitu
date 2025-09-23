@@ -1,8 +1,9 @@
 
 import os
 os.environ.setdefault('PYOPENGL_PLATFORM', 'egl')
-os.environ.setdefault('MESA_GL_VERSION_OVERRIDE', '3.3')
-os.environ.setdefault('MESA_GLSL_VERSION_OVERRIDE', '330')
+# pyrender's EGL platform requests an OpenGL 4.1 core context; align Mesa overrides
+os.environ.setdefault('MESA_GL_VERSION_OVERRIDE', '4.1')
+os.environ.setdefault('MESA_GLSL_VERSION_OVERRIDE', '410')
 import trimesh
 import pyrender
 import numpy as np
@@ -13,9 +14,16 @@ class Renderer(object):
 
     def __init__(self, focal_length=600, img_w=512, img_h=512, faces=None,
                  same_mesh_color=False, mesh_opacity=0.5):
-        self.renderer = pyrender.OffscreenRenderer(viewport_width=img_w,
-                                                   viewport_height=img_h,
-                                                   point_size=1.0)
+        try:
+            self.renderer = pyrender.OffscreenRenderer(viewport_width=img_w,
+                                                       viewport_height=img_h,
+                                                       point_size=1.0)
+        except Exception as e:
+            # Fallback to OSMesa in strictly headless environments or when EGL fails
+            os.environ['PYOPENGL_PLATFORM'] = 'osmesa'
+            self.renderer = pyrender.OffscreenRenderer(viewport_width=img_w,
+                                                       viewport_height=img_h,
+                                                       point_size=1.0)
         self.camera_center = [img_w // 2, img_h // 2]
         self.focal_length = focal_length
         self.faces = faces
@@ -47,7 +55,7 @@ class Renderer(object):
         # for every person in the scene
         for n in range(num_people):
 
-            mesh = trimesh.Trimesh(verts[n], self.faces)
+            mesh = trimesh.Trimesh(verts[n], self.faces, process=False)
             mesh.apply_transform(rot)
             if self.same_mesh_color:
                 # Use a neutral gray for all meshes

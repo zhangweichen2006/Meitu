@@ -16,10 +16,11 @@
                 "PYOPENGL_PLATFORM": "egl",
                 "PYTHONPATH": "${workspaceFolder}"
             },
-            "args": ["data=train", "experiment=camerahmr_multi", "exp_name=train_run1", "trainer.devices=1", "trainer.accelerator=gpu"]
+            "args": ["--image_folder", "data/mttest-images", "--output_folder", "outputs/mttest_test", "--output_cam", "outputs/mttest_test/cam", "--export_init_npz", "outputs/mttest_test/test.npz"]
         }
     ]
 }
+
 // data=train experiment=camerahmr exp_name=train_run1
 // trainer=ddp trainer.accelerator=gpu trainer.devices=2
 // --input data/test-images/3DPW/imageFiles/downtown_walkBridge_01 \

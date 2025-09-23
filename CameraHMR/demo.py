@@ -25,6 +25,8 @@ def make_parser():
         help="Only output the image with the mesh overlayed on top.")
     parser.add_argument("--use_smplify", action="store_true",
         help="Enable CamSMPLify refinement using 2D dense keypoints and intrinsics.")
+    input_group.add_argument("--model_path", type=str,
+        help="Path to model checkpoint.")
     return parser
 
 def main():
@@ -35,7 +37,8 @@ def main():
                                    same_mesh_color=args.same_mesh_color,
                                    save_smpl_obj=args.save_smpl_obj,
                                    use_smplify=args.use_smplify,
-                                   export_init_npz=args.export_init_npz)
+                                   export_init_npz=args.export_init_npz,
+                                   model_path=args.model_path)
     if args.video:
         estimator.run_on_video(args.video, args.output_folder, args.output_cam)
     else:

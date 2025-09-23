@@ -66,8 +66,9 @@ def resize_image(img, target_size):
     return aspect_ratio, final_img
 
 class HumanMeshEstimator:
-    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False, use_smplify=False, export_init_npz=None):
+    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False, use_smplify=False, export_init_npz=None, model_path=None):
         self.device = (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
+        self.model_path = model_path
         self.model = self.init_model()
         self.detector = self.init_detector(threshold)
         self.cam_model = self.init_cam_model()
@@ -112,7 +113,8 @@ class HumanMeshEstimator:
         return model
 
     def init_model(self):
-        model = CameraHMR.load_from_checkpoint(CHECKPOINT_PATH, strict=False)
+        print("Test model_path:", self.model_path)
+        model = CameraHMR.load_from_checkpoint(self.model_path if self.model_path else CHECKPOINT_PATH, strict=False)
         model = model.to(self.device)
         model.eval()
         return model
