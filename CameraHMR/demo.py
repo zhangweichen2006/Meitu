@@ -25,7 +25,7 @@ def make_parser():
         help="Only output the image with the mesh overlayed on top.")
     parser.add_argument("--use_smplify", action="store_true",
         help="Enable CamSMPLify refinement using 2D dense keypoints and intrinsics.")
-    input_group.add_argument("--model_path", type=str,
+    parser.add_argument("--model_path", type=str,
         help="Path to model checkpoint.")
     return parser
 
