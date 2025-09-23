@@ -78,7 +78,9 @@ class DatasetTrainTest(Dataset):
                     self.sapiens_pixel_normals_path = self.data['sapiens_pixel_normals_path'][valid_paths_sapiens_normals]
                     self.imgname = self.imgname[valid_paths_sapiens_normals]
                     self.img_paths = np.array(self.img_paths)[valid_paths_sapiens_normals].tolist()
-                    self.data = {k: v[valid_paths_sapiens_normals] for k, v in self.data.items()}
+                    self.data = {k: v[valid_paths_sapiens_normals] if v.shape[0] == len(valid_paths_sapiens_normals) else v for k, v in self.data.items()}
+                    for k, v in self.data.items():
+                        print(k, v.shape)
             else:
                 self.sapiens_pixel_normals_path = self.data['sapiens_pixel_normals_path']
         else:
