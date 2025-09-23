@@ -9,6 +9,7 @@ import pyrender
 import numpy as np
 import colorsys
 import cv2
+from pathlib import Path
 
 class Renderer(object):
 
@@ -32,9 +33,11 @@ class Renderer(object):
         self.mesh_opacity = float(mesh_opacity)
 
 
-    def render_front_view(self, verts, bg_img_rgb=None, bg_color=(1., 1., 1., 1.)):
+    def render_front_view(self, verts, bg_img_rgb=None, bg_color=(1., 1., 1., 1.), save_scene_path=None):
         # Create a scene for each image and render all meshes
         scene = pyrender.Scene(bg_color=bg_color, ambient_light=np.ones(3) * 0)
+        if save_scene_path is not None:
+            tm_scene = trimesh.Scene()
         # Create camera. Camera will always be at [0,0,0]
         camera = pyrender.camera.IntrinsicsCamera(fx=self.focal_length, fy=self.focal_length,
                                                   cx=self.camera_center[0], cy=self.camera_center[1])
@@ -57,6 +60,12 @@ class Renderer(object):
 
             mesh = trimesh.Trimesh(verts[n], self.faces, process=False)
             mesh.apply_transform(rot)
+            # Collect geometry for optional export
+            if save_scene_path is not None:
+                try:
+                    tm_scene.add_geometry(mesh, node_name=f'mesh_{n}')
+                except Exception:
+                    pass
             if self.same_mesh_color:
                 # Use a neutral gray for all meshes
                 mesh_color = (1.0, 0.6, 1.0)
@@ -73,6 +82,18 @@ class Renderer(object):
                 baseColorFactor=mesh_color)
             mesh = pyrender.Mesh.from_trimesh(mesh, material=material, wireframe=False)
             scene.add(mesh, 'mesh')
+
+        # Optionally export the scene geometry (GLB/GLTF/other formats based on extension)
+        if save_scene_path is not None:
+            try:
+                save_path = Path(save_scene_path)
+                if save_path.parent.as_posix() not in ("", "."):
+                    save_path.parent.mkdir(parents=True, exist_ok=True)
+                tm_scene.export(str(save_path))
+            except Exception as e:
+                # Do not fail rendering if export fails
+                import logging
+                logging.warning(f"Failed to export scene to {save_scene_path}: {e}")
 
         # Alpha channel was not working previously, need to check again
         # Until this is fixed use hack with depth image to get the opacity
