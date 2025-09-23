@@ -1,2 +1,2 @@
 DATE=$(date +%Y%m%d%H%M%S)
-CUDA_VISIBLE_DEVICES=0 PYOPENGL_PLATFORM=egl python demo.py --image_folder data/mttest-images --output_folder outputs/mttest_$DATE --output_cam outputs/mttest_$DATE/cam --export_init_npz outputs/mttest_$DATE/test.npz --model_path data/pretrained-models/camerahmr_checkpoint_cleaned.ckpt
+CUDA_VISIBLE_DEVICES=0 PYOPENGL_PLATFORM=egl python demo.py --image_folder data/mttest-images --output_folder outputs/mttest_$DATE --output_cam outputs/mttest_$DATE/cam --export_init_npz outputs/mttest_$DATE/test.npz --model_path logs/train/runs/train_run1/checkpoints/epoch=47-step=380000.ckpt

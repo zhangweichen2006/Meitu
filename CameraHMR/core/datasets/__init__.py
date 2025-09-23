@@ -25,8 +25,17 @@ class DataModule(pl.LightningDataModule):
         if stage == 'train_test':
             self.train_test_dataset = self.train_test_dataset_prepare(**kwargs)
         else:
-            self.train_dataset = self.train_dataset_prepare()
-            self.val_dataset = self.val_dataset_prepare()
+            kwargs['is_train'] = True
+            kwargs['version'] = 'traintest'
+            kwargs['mean'] = self.cfg.MODEL.IMAGE_MEAN
+            kwargs['std'] = self.cfg.MODEL.IMAGE_STD
+            # kwargs['cropsize'] = self.cfg.MODEL.IMAGE_SIZE
+            self.train_dataset = self.train_test_dataset_prepare(**kwargs)
+            kwargs['is_train'] = False
+            kwargs['version'] = 'traintest'
+            self.val_dataset = self.train_test_dataset_prepare(**kwargs)
+            # self.train_dataset = self.train_dataset_prepare()
+            # self.val_dataset = self.val_dataset_prepare()
 
     def train_dataset_prepare(self):
         if self.cfg.DATASETS.TRAIN_DATASETS:
@@ -62,7 +71,10 @@ class DataModule(pl.LightningDataModule):
         return dataset_list
 
     def train_test_dataset_prepare(self, **kwargs):
-        dataset_names = self.cfg.DATASETS.TRAIN_DATASETS.split('_')
+        if kwargs['is_train']:
+            dataset_names = self.cfg.DATASETS.TRAIN_DATASETS.split('_')
+        else:
+            dataset_names = self.cfg.DATASETS.VAL_DATASETS.split('_')
         valid_datasets = []
         for ds in dataset_names:
             img_dir = DATASET_FOLDERS.get(ds)
@@ -72,7 +84,7 @@ class DataModule(pl.LightningDataModule):
                 valid_datasets.append(ds)
             else:
                 print(f"Train (Train Test) Dataset {ds} does not exist")
-        dataset_list = [DatasetTrainTest(self.cfg, ds, version='traintest', **kwargs) for ds in valid_datasets]
+        dataset_list = [DatasetTrainTest(self.cfg, ds, **kwargs) for ds in valid_datasets]
         return dataset_list
 
     def train_dataloader(self):

@@ -33,7 +33,7 @@ class DatasetTrain(Dataset):
             'replicate': cv2.BORDER_REPLICATE,
         }[cfg.DATASETS.get('BORDER_MODE', 'constant')]
 
-        self.check_file_completeness = cfg.DATASETS.get('CHECK_FILE_COMPLETENESS', False)
+        self.check_file_completeness_and_filter = cfg.DATASETS.get('check_file_completeness_and_filter', False)
 
         self.img_dir = DATASET_FOLDERS[dataset]
         self.data = np.load(DATASET_FILES[version][dataset], allow_pickle=True)
@@ -67,10 +67,11 @@ class DatasetTrain(Dataset):
 
         # Filter out entries where the corresponding image file doesn't exist
         img_paths = [os.path.join(self.img_dir, str(p)) for p in self.imgname]
-        valid_paths = np.array([os.path.isfile(p) for p in img_paths])
-        if not valid_paths.all() and self.check_file_completeness:
-            num_missing = int((~valid_paths).sum())
-            log.warning(f"{self.dataset}: {num_missing} missing images. Skipping those samples.")
+        if self.check_file_completeness_and_filter:
+            valid_paths = np.array([os.path.isfile(p) for p in img_paths])
+            if not valid_paths.all():
+                num_missing = int((~valid_paths).sum())
+                log.warning(f"{self.dataset}: {num_missing} missing images. Skipping those samples.")
             # Apply mask to all per-sample arrays
             self.imgname = self.imgname[valid_paths]
             self.scale = self.scale[valid_paths]

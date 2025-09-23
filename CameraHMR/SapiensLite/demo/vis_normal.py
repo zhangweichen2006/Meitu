@@ -57,12 +57,16 @@ def fake_pad_images_to_batchsize(imgs):
     return F.pad(imgs, (0, 0, 0, 0, 0, 0, 0, BATCH_SIZE - imgs.shape[0]), value=0)
 
 
-def img_save_and_viz(image, result, output_path, seg_dir):
+def img_save_and_viz(image, result, output_path, seg_dir, swapHW=False, mode="resize"):
     output_file = (
         output_path.replace(".jpg", ".png")
         .replace(".jpeg", ".png")
         .replace(".png", ".npy")
     )
+    if swapHW:
+        result = result.permute(0, 2, 1)
+
+    # if mode == "resize":
 
     seg_logits = F.interpolate(
         result.unsqueeze(0), size=image.shape[:2], mode="bilinear"
@@ -230,7 +234,6 @@ def main():
             out_names=out_names,
             swapHW=args.swapHW,
         )
-    # resize
     elif args.preprocess == "zoom_to_3Dpt":
         inference_dataset = AdhocImageDataset(
             image_names,
@@ -243,6 +246,7 @@ def main():
             out_names=out_names,
             swapHW=args.swapHW,
         )
+    # resize
     else:
         inference_dataset = AdhocImageDataset(
             image_names,
@@ -291,6 +295,8 @@ def main():
                 r,
                 out_name,
                 args.seg_dir,
+                args.swapHW,
+                args.preprocess
             )
             for i, r, out_name in zip(
                 cropped_images_np[:valid_images_len],

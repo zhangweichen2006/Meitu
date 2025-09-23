@@ -10,7 +10,7 @@ import pickle
 import numpy as np
 from torch.utils.data import Dataset
 from ..utils.pylogger import get_pylogger
-from ..configs import DATASET_FOLDERS, DATASET_FILES
+from ..configs import DATASET_FOLDERS, DATASET_FILES, SAPIENS_TRAINING_NORMAL_VERSION, SAPIENS_TEST_NORMAL_VERSION
 from .utils import expand_to_aspect_ratio, get_example, resize_image
 from torchvision.transforms import Normalize
 from ..constants import FLIP_KEYPOINT_PERMUTATION, NUM_JOINTS, NUM_BETAS, NUM_PARAMS_SMPL, NUM_PARAMS_SMPLX, SMPLX2SMPL, SMPLX_MODEL_DIR, SMPL_MODEL_DIR
@@ -31,6 +31,7 @@ class DatasetTrainTest(Dataset):
         self.version = version
         self.cfg = cfg
         self.is_train = is_train
+        self.check_file_completeness_and_filter = cfg.DATASETS.get('check_file_completeness_and_filter', False)
 
         self.IMG_SIZE = cfg.MODEL.IMAGE_SIZE
         self.BBOX_SHAPE = cfg.MODEL.get('BBOX_SHAPE', None)
@@ -55,16 +56,53 @@ class DatasetTrainTest(Dataset):
         self.imgname = self.data['imgname']
 
         self.img_paths = [os.path.join(self.img_dir, str(p)) for p in self.imgname]
-        self.valid_paths = np.array([os.path.isfile(p) for p in self.img_paths])
 
-        # Filter out entries where the corresponding image file doesn't exist
-        if not self.valid_paths.all():
-            num_missing = int((~self.valid_paths).sum())
-            log.warning(f"{self.dataset}: {num_missing} missing images. Skipping those samples.")
-            # Apply mask to all per-sample arrays
-            self.imgname = self.imgname[self.valid_paths]
-            self.data = {k: v[self.valid_paths] for k, v in self.data.items()}
-            self.img_paths = np.array(self.img_paths)[self.valid_paths].tolist()
+        if self.check_file_completeness_and_filter:
+            self.valid_paths = np.array([os.path.isfile(p) for p in self.img_paths])
+
+            # Filter out entries where the corresponding image file doesn't exist
+            if not self.valid_paths.all():
+                num_missing = int((~self.valid_paths).sum())
+                log.warning(f"{self.dataset}: {num_missing} missing images. Skipping those samples.")
+                # Apply mask to all per-sample arrays
+                self.imgname = self.imgname[self.valid_paths]
+                self.data = {k: v[self.valid_paths] for k, v in self.data.items()}
+                self.img_paths = np.array(self.img_paths)[self.valid_paths].tolist()
+
+        if 'sapiens_pixel_normals_path' in self.data:
+            if self.check_file_completeness_and_filter:
+                valid_paths_sapiens_normals = np.array([os.path.isfile(p) for p in self.data['sapiens_pixel_normals_path']])
+                if not valid_paths_sapiens_normals.all():
+                    num_missing = int((~valid_paths_sapiens_normals).sum())
+                    log.warning(f"{self.dataset}: {num_missing} missing sapiens pixel normals. Skipping those samples.")
+                    self.sapiens_pixel_normals_path = self.data['sapiens_pixel_normals_path'][valid_paths_sapiens_normals]
+                    self.imgname = self.imgname[valid_paths_sapiens_normals]
+                    self.img_paths = np.array(self.img_paths)[valid_paths_sapiens_normals].tolist()
+                    self.data = {k: v[valid_paths_sapiens_normals] for k, v in self.data.items()}
+            else:
+                self.sapiens_pixel_normals_path = self.data['sapiens_pixel_normals_path']
+        else:
+            # check folder
+
+            normal_version = SAPIENS_TRAINING_NORMAL_VERSION if self.is_train else SAPIENS_TEST_NORMAL_VERSION
+
+            sapiens_normal_folder = self.img_dir.replace('training-images', normal_version) if self.is_train else self.img_dir.replace('test-images', normal_version)
+
+            if not os.path.exists(sapiens_normal_folder):
+                log.info(f'Processing sapiens pixel normals ...')
+                sapiens_ckpt = cfg.paths.get('sapiens_normal_ckpt', os.environ.get('SAPIENS_NORMAL_CKPT', None))
+                self.infer_batch_size = cfg.pretrained_models.sapiens.get('infer_batch_size', 4)
+                # sapiens_normal_model = SapiensNormalWrapper() # SLOW...
+                # TODO: port script
+                raise NotImplementedError('Sapiens normal model is not implemented')
+
+            sapiens_pixel_normals_path = [i.replace(self.img_dir, sapiens_normal_folder) for i in self.img_paths]
+            self.sapiens_pixel_normals_path = sapiens_pixel_normals_path
+
+            # save smpl_normals to dataset
+            sapiens_pixel_normals_data_arrays = {k: self.data[k] for k in self.data.files}
+            sapiens_pixel_normals_data_arrays['sapiens_pixel_normals_path'] = self.sapiens_pixel_normals_path
+            np.savez(DATASET_FILES[self.version][dataset], **sapiens_pixel_normals_data_arrays)
 
         self.scale = self.data['scale']
         self.center = self.data['center']
@@ -152,46 +190,14 @@ class DatasetTrainTest(Dataset):
                 verts = smpl_output.vertices.squeeze(0)
                 faces_t = torch.as_tensor(self.smpl_gt_neutral.faces, dtype=torch.long, device=verts.device)
                 vertex_normals = compute_normals_torch(verts, faces_t)
-                smpl_normals_arr.append(vertex_normals.detach().cpu().numpy())
+                smpl_normals_arr.append(vertex_normals.detach().cpu().numpy()) # trimesh vertex_normal (area-weighted) is different from open3d and this torch computed normal (angle-weighted)
             self.smpl_normals = np.array(smpl_normals_arr)
             # save smpl_normals to dataset
             data_arrays = {k: self.data[k] for k in self.data.files}
             data_arrays['smpl_normals'] = self.smpl_normals
             np.savez(DATASET_FILES[self.version][dataset], **data_arrays)
 
-        if 'sapiens_pixel_normals_path' in self.data:
-            self.sapiens_pixel_normals_path = self.data['sapiens_pixel_normals_path']
-        else:
-            log.info(f'Processing sapiens pixel normals ...')
-            sapiens_ckpt = cfg.paths.get('sapiens_normal_ckpt', os.environ.get('SAPIENS_NORMAL_CKPT', None))
-            self.infer_batch_size = cfg.pretrained_models.sapiens.get('infer_batch_size', 4)
-            sapiens_normal_model = SapiensNormalWrapper(
-                                        checkpoint_path=sapiens_ckpt,
-                                        use_torchscript=cfg.pretrained_models.sapiens.use_torchscript,
-                                        fp16=cfg.pretrained_models.sapiens.fp16,
-                                        input_size_hw=ast.literal_eval(cfg.pretrained_models.sapiens.input_crop_size_hw),
-                                        mean=cfg.pretrained_models.sapiens.mean,
-                                        std=cfg.pretrained_models.sapiens.std,
-                                        compile_model=cfg.pretrained_models.sapiens.compile_model,
-                                    )
 
-            sapiens_pixel_normals = []
-            for i in range(0, len(self.img_paths), self.infer_batch_size):
-                end_idx = min(i+self.infer_batch_size, len(self.imgname))
-                normal_res = sapiens_normal_model.infer_paths(self.img_paths[i:end_idx])
-                sapiens_pixel_normals.append(normal_res)
-                # normal 2 rgb and save
-                # save sapiens_pixel_normals to image_path_normal
-                sapiens_normal_folder = self.img_paths[0].replace('training-images', 'traintest-labels').rsplit('/',1)[0]+"_sapiens_normals"
-
-                for n, normal in enumerate(normal_res):
-                    normal_rgb = np.array(normal*0.5+0.5)*255.0
-                    normal_rgb = np.moveaxis(np.array(normal_rgb), 0, -1).astype(np.uint8)
-                    normal_rgb = cv2.cvtColor(normal_rgb, cv2.COLOR_BGR2RGB)
-                    cv2.imwrite(f'{sapiens_normal_folder}/normal_rgb_{n}.png', normal_rgb)
-
-            self.sapiens_pixel_normals = sapiens_pixel_normals
-            self.data['sapiens_pixel_normals'] = self.sapiens_pixel_normals
 
         if 'pi3_pc' in self.data:
             self.pi3_pc = self.data['pi3_pc']
@@ -219,6 +225,11 @@ class DatasetTrainTest(Dataset):
         cv_img = cv2.imread(imgname, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
         cv_img = cv_img[:, :, ::-1]
         aspect_ratio, img_full_resized = resize_image(cv_img, 256)
+        if 'sapiens_pixel_normals_path' in self.data.files:
+            normal_imgname = self.sapiens_pixel_normals_path[index]
+            normal_data = np.load(normal_imgname)
+            normal_full_resized = resize_image(normal_imgname, 256)
+
         img_full_resized = np.transpose(img_full_resized.astype('float32'),
                         (2, 0, 1))/255.0
         item['img_full_resized'] = self.normalize_img(torch.from_numpy(img_full_resized).float())

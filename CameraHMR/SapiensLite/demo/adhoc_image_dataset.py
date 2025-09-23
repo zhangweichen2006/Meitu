@@ -136,6 +136,8 @@ class AdhocImageDataset(torch.utils.data.Dataset):
                         img = img[target_height//2:target_height//2+target_height, target_width//2:target_width//2+target_width]
                         # and scale back to target_width and target_height
                         # img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LINEAR)
+            else:
+                img = cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LINEAR)
 
         img = img.transpose(2, 0, 1)
         img = torch.from_numpy(img)

@@ -16,10 +16,23 @@
                 "PYOPENGL_PLATFORM": "egl",
                 "PYTHONPATH": "${workspaceFolder}"
             },
-            "args": ["--image_folder", "data/mttest-images", "--output_folder", "outputs/mttest_test", "--output_cam", "outputs/mttest_test/cam", "--export_init_npz", "outputs/mttest_test/test.npz"]
+            "args": ["SapiensLite/torchscript/normal/checkpoints/sapiens_2b/sapiens_2b_normal_render_people_epoch_70_torchscript.pt2", "--input", "data/training-images/20221011_1_250_batch01hand_closeup_suburb_a_6fps", "--output_root", "data/training-images-sapiens-normals-DirectResize/20221011_1_250_batch01hand_closeup_suburb_a_6fps", "--batch_size", "1", "--preprocess", "resize", "--swapHW", "--redo"]
         }
     ]
 }
+// SapiensLite/torchscript/normal/checkpoints/sapiens_2b/sapiens_2b_normal_render_people_epoch_70_torchscript.pt2 \
+//     --input data/training-images/20221011_1_250_batch01hand_closeup_suburb_a_6fps \
+//     --output_root data/training-images-sapiens-normals-DirectResize/20221011_1_250_batch01hand_closeup_suburb_a_6fps \
+//     --batch_size 1 \
+//     --preprocess resize \
+//     --swapHW \
+//     --redo
+
+// "data=traintest", "experiment=camerahmr_multi", "exp_name=train_run3", "trainer.accelerator=gpu", "trainer.devices=1", "+DATASETS.check_file_completeness_and_filter=True"
+
+// data=traintest experiment=camerahmr_multi exp_name=train_run3  trainer=ddp trainer.accelerator=gpu
+
+// "--image_folder", "data/mttest-images", "--output_folder", "outputs/mttest_test", "--output_cam", "outputs/mttest_test/cam", "--export_init_npz", "outputs/mttest_test/test.npz"
 
 // data=train experiment=camerahmr exp_name=train_run1
 // trainer=ddp trainer.accelerator=gpu trainer.devices=2

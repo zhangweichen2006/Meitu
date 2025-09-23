@@ -104,6 +104,11 @@ class DatasetVal(Dataset):
         self.length = self.scale.shape[0]
         log.info(f'Loaded {self.dataset} dataset, num samples {self.length}')
 
+        img_paths = [os.path.join(self.img_dir, str(p)) for p in self.imgname]
+        if self.check_file_completeness_and_filter:
+            valid_paths = np.array([os.path.isfile(p) for p in img_paths])
+            self.length = self.scale.shape[0]
+
     def __getitem__(self, index):
         item = {}
         scale = self.scale[index].copy()
