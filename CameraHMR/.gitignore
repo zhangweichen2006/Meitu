@@ -21,3 +21,7 @@ logs*
 *.jpg
 *.npy
 data/
+*.glb
+*.gltf
+*.obj
+*.ply

@@ -14,6 +14,7 @@ from core.datasets import DataModule
 from core.sapiens_normal_model import SapiensNormalWrapper
 from core.pi3_decoder_model import Pi3Model
 from core.vggt_decoder_model import VGGTModel
+# from core.mapanything_model import MapAnythingModel
 from core.utils.pylogger import get_pylogger
 from core.utils.misc import task_wrapper, log_hyperparameters
 from core.utils.torch_compat import torch as _torch_compat  # registers safe globals on import
@@ -31,6 +32,7 @@ os.environ.setdefault("PROJECT_ROOT", str(PROJECT_ROOT))
 os.environ.setdefault("SAPIENS_NORMAL_CKPT", "SapiensLite/torchscript/normal/checkpoints/sapiens_2b/sapiens_2b_normal_render_people_epoch_70_torchscript.pt2")
 os.environ.setdefault("VGGT_CKPT", "../VGGT/vggt_1B_commercial.pt")
 os.environ.setdefault("PI3_CKPT", "../Pi3/model.safetensors")
+os.environ.setdefault("MAPANYTHING_CKPT", "../MapAnything/MapAnything_V1_3.pt")
 
 
 @pl.utilities.rank_zero.rank_zero_only

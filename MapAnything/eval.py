@@ -6,7 +6,7 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import torch
 from mapanything.models import MapAnything
 from mapanything.utils.image import load_images
-
+import open3d as o3d
 # Get inference device
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -15,7 +15,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 model = MapAnything.from_pretrained("facebook/map-anything").to(device)
 
 # Load and preprocess images from a folder or list of paths
-images = "../data/meitu_img_test/fixed"  # or ["path/to/img1.jpg", "path/to/img2.jpg", ...]
+images = "../data/test_data_img/fixed"  # or ["path/to/img1.jpg", "path/to/img2.jpg", ...]
 views = load_images(images)
 
 # Run inference
@@ -56,3 +56,15 @@ for i, pred in enumerate(predictions):
 
     # Original input
     img_no_norm = pred["img_no_norm"]         # Denormalized input images for visualization (B, H, W, 3)
+    # from PIL import Image
+    # save_img = img_no_norm[0].cpu().numpy()*255
+    # save_img = save_img.astype(np.uint8)
+    # pil_img = Image.fromarray(save_img)
+    # pil_img.save("img_no_norm.png")
+
+    ptc = o3d.geometry.PointCloud()
+    ptc.points = o3d.utility.Vector3dVector(pts3d[0].cpu().numpy())
+    ptc.colors = o3d.utility.Vector3dVector(img_no_norm[0].cpu().numpy())
+    o3d.io.write_point_cloud("ptc.ply", ptc)
+
+    cv2.imwrite("img_no_norm.png", img_no_norm[0].cpu().numpy()*255.)
