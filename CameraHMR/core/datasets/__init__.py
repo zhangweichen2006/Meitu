@@ -101,7 +101,7 @@ class DataModule(pl.LightningDataModule):
                 else:
                     print(f"Train (Train Test) Dataset {ds} does not exist")
         dataset_list = [
-            (DatasetWAI(self.cfg, ds, version='traintest', is_train=False) if ds.startswith('wai:') else DatasetTrainTest(self.cfg, ds, version='traintest', **kwargs))
+            (DatasetWAI(self.cfg, ds, **kwargs) if ds.startswith('wai:') else DatasetTrainTest(self.cfg, ds, **kwargs))
             for ds in valid_datasets
         ]
         return dataset_list

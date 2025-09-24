@@ -142,8 +142,7 @@ if __name__ == "__main__":
     ap.add_argument("--wai_root", type=Path,
                     help="Output WAI root directory")
     ap.add_argument("--dataset_name", default="closeup-suburbd-bbox44", type=str)
-    ap.add_argument("--scene_name", default=None, type=str)
-    args = ap.parse_args()
+    ap.add_argument("--scene_name", default=None, type=str)    args = ap.parse_args()
 
 #         python3 tools/convert_closeup_bedlam_to_wai.py \
 #   --images_dir /home/cevin/Meitu/CameraHMR/data/training-images/20221011_1_250_batch01hand_closeup_suburb_d_6fps/png \
