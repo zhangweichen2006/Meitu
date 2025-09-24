@@ -1,4 +1,5 @@
 
+from math import e
 import os
 import cv2
 import torch
@@ -58,6 +59,10 @@ class DatasetTrainTest(Dataset):
 
         self.img_paths = [os.path.join(self.img_dir, str(p)) for p in self.imgname]
 
+        self.sapiens_normal_version = SAPIENS_TRAINING_NORMAL_VERSION if self.is_train else SAPIENS_TEST_NORMAL_VERSION
+        self.sapiens_normal_version2 = SAPIENS_TRAINING_NORMAL_VERSION2 if self.is_train else SAPIENS_TEST_NORMAL_VERSION2
+        self.replace_version = "training-images" if self.is_train else "test-images"
+
         if self.check_file_completeness_and_filter:
             self.valid_paths = np.array([os.path.isfile(p) for p in self.img_paths])
 
@@ -69,60 +74,91 @@ class DatasetTrainTest(Dataset):
                 self.imgname = np.array(self.imgname)[self.valid_paths].tolist()
                 self.data = {k: v[self.valid_paths] for k, v in self.data.items()}
                 self.img_paths = np.array(self.img_paths)[self.valid_paths].tolist()
+        
+        if 'sapiens_normals_folder' in self.data:
+            sapiens_normals_folder, sapiens_normals_folder2 = self.data['sapiens_normals_folder']
+            replace_src, replace_tgt = self.replace_version, self.sapiens_normal_version
+            def img_to_normals_path(img_path, replace_src, replace_tgt):
+                base1 = os.path.normpath(img_path.replace(replace_src, replace_tgt))
+                root1, _ = os.path.splitext(base1)
+                return root1 + '.npy'
 
-        if 'sapiens_pixel_normals_path' in self.data:
+            self.sapiens_normals_path = [img_to_normals_path(i, replace_src, replace_tgt) for i in self.img_paths] 
             if self.check_file_completeness_and_filter:
-                valid_paths_sapiens_normals = np.array([os.path.isfile(p) for p in self.data['sapiens_pixel_normals_path']])
+                valid_paths_sapiens_normals = np.array([os.path.isfile(p) for p in self.sapiens_normals_path])
                 if not valid_paths_sapiens_normals.all():
                     num_missing = int((~valid_paths_sapiens_normals).sum())
                     log.warning(f"{self.dataset}: {num_missing} missing sapiens pixel normals. Skipping those samples.")
-                    self.sapiens_pixel_normals_path = self.data['sapiens_pixel_normals_path'][valid_paths_sapiens_normals]
+                    self.sapiens_normals_path = self.data['sapiens_normals_path'][valid_paths_sapiens_normals]
                     self.imgname = np.array(self.imgname)[valid_paths_sapiens_normals].tolist()
                     self.img_paths = np.array(self.img_paths)[valid_paths_sapiens_normals].tolist()
                     self.data = {k: v[valid_paths_sapiens_normals] if v.shape[0] == len(valid_paths_sapiens_normals) else v for k, v in self.data.items()}
                     for k, v in self.data.items():
                         print(k, v.shape)
-            else:
-                self.sapiens_pixel_normals_path = self.data['sapiens_pixel_normals_path']
         else:
             # check folder
             self.normal_preprocess = NORMAL_PREPROCESS[self.version][self.dataset]['preprocess']
             self.normal_swapHW = NORMAL_PREPROCESS[self.version][self.dataset]['swapHW']
 
-            normal_version = SAPIENS_TRAINING_NORMAL_VERSION if self.is_train else SAPIENS_TEST_NORMAL_VERSION
-            replace_version = "training-images" if self.is_train else "test-images"
-            normal_version2 = SAPIENS_TRAINING_NORMAL_VERSION2 if self.is_train else SAPIENS_TEST_NORMAL_VERSION2
+            sapiens_normals_folder = self.img_dir.replace(self.replace_version, self.sapiens_normal_version) if self.is_train else self.img_dir.replace(self.replace_version, self.sapiens_normal_version)
+            sapiens_normals_folder2 = self.img_dir.replace(self.replace_version, self.sapiens_normal_version2) if self.is_train else self.img_dir.replace(self.replace_version, self.sapiens_normal_version2)
 
-            sapiens_normal_folder = self.img_dir.replace(replace_version, normal_version) if self.is_train else self.img_dir.replace(replace_version, normal_version)
+            # Only raise if BOTH candidate folders are missing
+            if (not os.path.exists(sapiens_normals_folder)) and (not os.path.exists(sapiens_normals_folder2)):
+                log.error(f'Sapiens normal folder does not exist: {sapiens_normals_folder}')
 
-            if not os.path.exists(sapiens_normal_folder):
-                sapiens_normal_folder = self.img_dir.replace(replace_version, normal_version2) if self.is_train else self.img_dir.replace(replace_version, normal_version2)
+                log.info(f'Processing sapiens pixel normals ...')
+                sapiens_ckpt = cfg.paths.get('sapiens_normal_ckpt', os.environ.get('SAPIENS_NORMAL_CKPT', None))
+                self.infer_batch_size = cfg.pretrained_models.sapiens.get('infer_batch_size', 4)
+                # sapiens_normal_model = SapiensNormalWrapper() # SLOW...
+                # TODO: port script
+                raise NotImplementedError('Sapiens normal model is not implemented')
 
-                if not os.path.exists(sapiens_normal_folder):
-                    log.error(f'Sapiens normal folder does not exist: {sapiens_normal_folder}')
+            # Helper to map an image path to the best available normals file path
+            def _map_to_normals_path(img_path, replace_src, replace_tgt, replace_tgt2):
+                # Prefer first folder, fall back to second; try .npz then .npy
+                base1 = os.path.normpath(img_path.replace(replace_src, replace_tgt))
+                root1, _ = os.path.splitext(base1)
+                cand1_npy = root1 + '.npy'
+                if os.path.isfile(cand1_npy):
+                    return cand1_npy
+                # Try second folcand1_npyder if provided
+                base2 = os.path.normpath(img_path.replace(replace_src, replace_tgt2))
+                root2, _ = os.path.splitext(base2)
+                cand2_npy = root2 + '.npy'
+                if os.path.isfile(cand2_npy):
+                    print(f"copying {cand2_npy} to {cand1_npy} to use later...")
+                    os.system(f"cp {cand2_npy} {cand1_npy} &")
+                    return cand2_npy
+                # Default to first candidate with .npz extension
+                return None
 
-                    log.info(f'Processing sapiens pixel normals ...')
-                    sapiens_ckpt = cfg.paths.get('sapiens_normal_ckpt', os.environ.get('SAPIENS_NORMAL_CKPT', None))
-                    self.infer_batch_size = cfg.pretrained_models.sapiens.get('infer_batch_size', 4)
-                    # sapiens_normal_model = SapiensNormalWrapper() # SLOW...
-                    # TODO: port script
-                    raise NotImplementedError('Sapiens normal model is not implemented')
-
-            self.sapiens_pixel_normals_path = [i.replace(self.img_dir, sapiens_normal_folder).replace('.jpg', '.npz').replace('.jpeg', '.npz').replace('.png', '.npz') for i in self.img_paths]
+            self.sapiens_normals_path = [os.path.splitext(i.replace(self.img_dir, sapiens_normals_folder))[0] + '.npy' for i in self.img_paths]
 
             if self.check_file_completeness_and_filter:
-                valid_paths_sapiens_normals = np.array([os.path.isfile(p) for p in self.sapiens_pixel_normals_path])
+                self.sapiens_normals_path_combine = []
+                valid_paths_sapiens_normals = []
+                # use normal path 2 and copy to normal path 1
+                for idx, i in enumerate(self.img_paths):
+                    map_normal_path = _map_to_normals_path(i, self.replace_version, self.sapiens_normal_version, self.sapiens_normal_version2)
+                    if map_normal_path:
+                        self.sapiens_normals_path_combine.append(map_normal_path)
+                        valid_paths_sapiens_normals.append(True)   
+                    else:
+                        valid_paths_sapiens_normals.append(False)
+                valid_paths_sapiens_normals = np.array(valid_paths_sapiens_normals)
                 if not valid_paths_sapiens_normals.all():
                     num_missing = int((~valid_paths_sapiens_normals).sum())
                     log.warning(f"{self.dataset}: {num_missing} missing sapiens pixel normals. Skipping those samples.")
-                    self.sapiens_pixel_normals_path = np.array(self.sapiens_pixel_normals_path)[valid_paths_sapiens_normals].tolist()
+                    self.sapiens_normals_path = self.sapiens_normals_path_combine
                     self.imgname = np.array(self.imgname)[valid_paths_sapiens_normals].tolist()
                     self.img_paths = np.array(self.img_paths)[valid_paths_sapiens_normals].tolist()
+                    self.data = {k: v[valid_paths_sapiens_normals] if hasattr(v, 'shape') and v.shape[0] == len(valid_paths_sapiens_normals) else v for k, v in self.data.items()}
             else:
-                self.sapiens_pixel_normals_path = self.sapiens_pixel_normals_path
+                self.sapiens_normals_path = self.sapiens_normals_path
 
             # save smpl_normals to dataset
-            self.data['sapiens_pixel_normals_path'] = self.sapiens_pixel_normals_path
+            self.data['sapiens_normals_folder'] = (sapiens_normals_folder, sapiens_normals_folder2)
             np.savez(DATASET_FILES[self.version][dataset], **self.data)
 
         self.scale = self.data['scale']
@@ -245,10 +281,7 @@ class DatasetTrainTest(Dataset):
         cv_img = cv2.imread(imgname, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
         cv_img = cv_img[:, :, ::-1]
         aspect_ratio, img_full_resized = resize_image(cv_img, 256)
-        if 'sapiens_pixel_normals_path' in self.data:
-            normal_imgname = self.sapiens_pixel_normals_path[index]
-            normal_data = np.load(normal_imgname)
-            normal_full_resized = resize_image(normal_imgname, 256)
+        # normals are handled inside get_example via normal_path argument
 
         img_full_resized = np.transpose(img_full_resized.astype('float32'),
                         (2, 0, 1))/255.0
@@ -279,7 +312,7 @@ class DatasetTrainTest(Dataset):
         img_patch_rgba, \
         img_patch_cv,\
         keypoints_2d, \
-        img_size, cx, cy, bbox_w, bbox_h, trans, scale_aug = get_example(imgname,
+        img_size, cx, cy, bbox_w, bbox_h, trans, scale_aug, normal_patch = get_example(imgname,
                                       center_x, center_y,
                                       bbox_size, bbox_size,
                                       keypoints_2d,
@@ -289,7 +322,8 @@ class DatasetTrainTest(Dataset):
                                       is_bgr=True, return_trans=True,
                                       use_skimage_antialias=self.use_skimage_antialias,
                                       border_mode=self.border_mode,
-                                      dataset=self.dataset
+                                      dataset=self.dataset,
+                                      normal_path=(self.sapiens_normals_path[index] if hasattr(self, 'sapiens_normals_path') and len(self.sapiens_normals_path) > 0 else None)
                                       )
 
         # TODO: Calculate plucker_embeds
@@ -306,6 +340,8 @@ class DatasetTrainTest(Dataset):
         img_patch = img_patch_rgba[:3,:,:]
         item['img'] = img_patch
         item['img_disp'] = img_patch_cv
+        if normal_patch is not None:
+            item['normal'] = normal_patch
         item['keypoints_2d'] = keypoints_2d.astype(np.float32)
         item['orig_keypoints_2d'] = orig_keypoints_2d
         item['box_center'] = new_center
@@ -358,10 +394,10 @@ class DatasetTrainTest(Dataset):
         else:
             item['smpl_normals'] = np.zeros((1, 6890, 3))
 
-        if 'sapiens_pixel_normals_path' in self.data:
-            item['sapiens_pixel_normals_path'] = self.sapiens_pixel_normals_path[index]
+        if 'sapiens_normals_path' in self.data:
+            item['sapiens_normals_path'] = self.sapiens_normals_path[index]
         else:
-            item['sapiens_pixel_normals_path'] = np.zeros((1, 1, 1))
+            item['sapiens_normals_path'] = np.zeros((1, 1, 1))
 
         return item
 
