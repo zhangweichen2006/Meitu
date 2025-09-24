@@ -136,11 +136,11 @@ class CameraHMR(pl.LightningModule):
             conditioning_feats = rgb_feats + normal_feats
         else:
             conditioning_feats = rgb_feats
-        
-        # denormalize x and normal_input
-        norm_in = 255*(normal_input[0].detach().cpu().numpy()*0.5+0.5)
 
-        cv2.imwrite('normal_input.png', norm_in.transpose(1, 2, 0))
+        # denormalize x and normal_input
+        # norm_in = 255*(normal_input[0].detach().cpu().numpy()*0.5+0.5)
+
+        # cv2.imwrite('normal_input.png', norm_in.transpose(1, 2, 0))
         # cv2.imwrite('rgb_feats.png', rgb_feats.detach().cpu().numpy().transpose(1, 2, 0))
         # cv2.imwrite('normal_feats.png', normal_feats.detach().cpu().numpy().transpose(1, 2, 0))
         # cv2.imwrite('conditioning_feats.png', conditioning_feats.detach().cpu().numpy().transpose(1, 2, 0))
@@ -231,9 +231,6 @@ class CameraHMR(pl.LightningModule):
 
 
         output['pred_keypoints_2d'] = joints2d.reshape(batch_size, -1, 2)
-        import numpy as np
-
-
         return output, fl_h
 
     def perspective_projection_vis(self, input_batch, output, max_save_img=1):
@@ -306,7 +303,8 @@ class CameraHMR(pl.LightningModule):
         w_normals = self.cfg.LOSS_WEIGHTS.get('SMPL_NORMALS', 0.0)
         if w_normals and ('gt_vertices' in batch):
             faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=pred_vertices.device)
-            loss_normals = self.smpl_normal_loss(pred_vertices, batch['gt_vertices'], faces_t)
+            imgnames = batch.get('imgname', None)
+            loss_normals = self.smpl_normal_loss(pred_vertices, batch['gt_vertices'], faces_t, imgnames=imgnames)
             loss = loss + w_normals * loss_normals
 
 

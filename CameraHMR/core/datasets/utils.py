@@ -635,9 +635,9 @@ def get_example(img_path: str|np.ndarray, center_x: float, center_y: float,
                 use_skimage_antialias: bool = False,
                 border_mode: int = cv2.BORDER_CONSTANT,
                 return_trans: bool = False,
-                dataset: str = None, 
-                normal_path: str|np.ndarray = None, 
-                normal_swapHW: bool = False, 
+                dataset: str = None,
+                normal_path: str|np.ndarray = None,
+                normal_swapHW: bool = False,
                 normal_preprocess: str = "resize"):
 
     if isinstance(img_path, str):
@@ -776,60 +776,6 @@ def get_example(img_path: str|np.ndarray, center_x: float, center_y: float,
 
     keypoints_2d[:, :2] = trans_points2d_parallel(keypoints_2d[:, 0:2], trans)
     keypoints_2d[:, :-1] = keypoints_2d[:, :-1] / patch_width - 0.5
-
-    # Normal modality processing (optional)
-    normal_patch = None
-    if isinstance(normal_path, (str, np.ndarray)) and normal_path is not None:
-        normal_img = None
-        if isinstance(normal_path, str) and len(normal_path) > 0 and os.path.isfile(normal_path):
-            normal_loaded = np.load(normal_path, allow_pickle=True)
-            if isinstance(normal_loaded, np.lib.npyio.NpzFile):
-                # Try common keys, else first entry
-                candidate_keys = ['normal', 'normals', 'data']
-                key_to_use = None
-                for k in candidate_keys:
-                    if k in normal_loaded:
-                        key_to_use = k
-                        break
-                if key_to_use is None and len(normal_loaded.files) > 0:
-                    key_to_use = normal_loaded.files[0]
-                normal_img = normal_loaded[key_to_use]
-            elif isinstance(normal_loaded, np.ndarray):
-                normal_img = normal_loaded
-        elif isinstance(normal_path, np.ndarray):
-            normal_img = normal_path
-
-        if isinstance(normal_img, np.ndarray):
-            # Ensure HWC with 3 channels
-            if normal_img.ndim == 2:
-                normal_img = np.stack([normal_img]*3, axis=-1)
-            if normal_img.ndim == 3 and normal_img.shape[2] > 3:
-                normal_img = normal_img[:, :, :3]
-            normal_img = normal_img.astype(np.float32)
-
-            # Apply the same crop/affine transform as the RGB image
-            normal_patch_cv, _ = generate_image_patch_cv2(normal_img,
-                                                          center_x, center_y,
-                                                          width, height,
-                                                          patch_width, patch_height,
-                                                          do_flip, scale, rot,
-                                                          border_mode=cv2.BORDER_CONSTANT,
-                                                          border_value=0)
-
-            # Adjust vector field for flip/rotation if channels correspond to (nx, ny, nz)
-            # Horizontal flip (already applied spatially) should invert x-component
-            if do_flip:
-                normal_patch_cv[:, :, 0] *= -1.0
-            if rot != 0:
-                rot_rad = np.deg2rad(rot)
-                c, s = np.cos(rot_rad), np.sin(rot_rad)
-                nx = normal_patch_cv[:, :, 0].copy()
-                ny = normal_patch_cv[:, :, 1].copy()
-                normal_patch_cv[:, :, 0] = c*nx - s*ny
-                normal_patch_cv[:, :, 1] = s*nx + c*ny
-
-            # Convert to CHW float32 without color normalization
-            normal_patch = convert_cvimg_to_tensor(normal_patch_cv)
 
     if not return_trans:
         return img_patch, img_patch_cv, keypoints_2d, img_size, center_x, center_y, width, height, scale, normal_patch

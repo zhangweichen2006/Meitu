@@ -83,8 +83,9 @@ def compute_vertex_normals(verts: torch.Tensor,
     normals[:, faces[:, 1], :] += fn
     normals[:, faces[:, 2], :] += fn
 
-    # Normalize vertex normals
+    # Normalize vertex normals and clip components for numerical safety
     normals = normals / (normals.norm(dim=-1, keepdim=True) + eps)
+    # normals = torch.clamp(normals, min=-1.0, max=1.0) # TODO: Need to check
     return normals
 
 
@@ -101,7 +102,7 @@ class PointToPlaneLoss(nn.Module):
         self.detach_gt = detach_gt
         self.eps = eps
 
-    # @torch.amp.autocast(enabled=False)  # TODO: keep normals in FP32 for stability 
+    # @torch.amp.autocast(enabled=False)  # TODO: keep normals in FP32 for stability
     def forward(self,
                 pred_vertices: torch.Tensor,  # (B, V, 3), float
                 gt_vertices: torch.Tensor,    # (B, V, 3), float
@@ -207,7 +208,7 @@ class SMPLNormalLoss(nn.Module):
         else:
             raise NotImplementedError('Unsupported loss function')
 
-    def forward(self, pred_vertices: torch.Tensor, gt_vertices: torch.Tensor, faces: torch.Tensor) -> torch.Tensor:
+    def forward(self, pred_vertices: torch.Tensor, gt_vertices: torch.Tensor, faces: torch.Tensor, imgnames=None) -> torch.Tensor:
         """
         Compute per-vertex normal loss between predicted and GT SMPL meshes.
 
@@ -220,6 +221,14 @@ class SMPLNormalLoss(nn.Module):
             Scalar loss (summed over batch and vertices), cosine-based: 1 - cos(theta).
         """
         # Ensure tensors are float and on same device
+        if (pred_vertices is None) or (gt_vertices is None):
+            if imgnames is not None:
+                try:
+                    print("[SMPLNormalLoss] Missing vertices. imgnames:", list(imgnames))
+                except Exception:
+                    print("[SMPLNormalLoss] Missing vertices. imgnames provided but not printable.")
+            raise ValueError("SMPLNormalLoss: pred_vertices or gt_vertices is None")
+
         device = pred_vertices.device
         gt_vertices = gt_vertices.to(device=device)
         faces = faces.to(device=device, dtype=torch.long)
@@ -227,6 +236,24 @@ class SMPLNormalLoss(nn.Module):
         # Compute area-weighted vertex normals, normalized per-vertex
         pred_normals = compute_normals_torch(pred_vertices, faces)   # (B, V, 3)
         gt_normals = compute_normals_torch(gt_vertices, faces)       # (B, V, 3)
+
+        if (pred_normals is None) or (gt_normals is None):
+            if imgnames is not None:
+                try:
+                    print("[SMPLNormalLoss] None normals detected. imgnames:", list(imgnames))
+                except Exception:
+                    print("[SMPLNormalLoss] None normals detected. imgnames provided but not printable.")
+            raise ValueError("SMPLNormalLoss: pred_normals or gt_normals is None after compute_normals_torch")
+
+        if torch.isnan(pred_normals).any() or torch.isnan(gt_normals).any():
+            if imgnames is not None:
+                try:
+                    print("[SMPLNormalLoss] NaN normals detected. imgnames:", list(imgnames))
+                except Exception:
+                    print("[SMPLNormalLoss] NaN normals detected. imgnames provided but not printable.")
+            # Replace NaNs with zeros to avoid crashing
+            pred_normals = torch.nan_to_num(pred_normals, nan=0.0)
+            gt_normals = torch.nan_to_num(gt_normals, nan=0.0)
 
         # Cosine similarity per vertex (orientation-agnostic via absolute value)
         cos_sim = F.cosine_similarity(pred_normals, gt_normals, dim=-1)  # (B, V)

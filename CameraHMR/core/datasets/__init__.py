@@ -104,6 +104,12 @@ class DataModule(pl.LightningDataModule):
             (DatasetWAI(self.cfg, ds, **kwargs) if ds.startswith('wai:') else DatasetTrainTest(self.cfg, ds, **kwargs))
             for ds in valid_datasets
         ]
+        # For training, return a single concatenated dataset so that DataLoader sees samples, not datasets
+        if kwargs['is_train']:
+            if len(dataset_list) == 0:
+                return []
+            return torch.utils.data.ConcatDataset(dataset_list)
+        # For validation, return list so we create one DataLoader per dataset
         return dataset_list
 
     def train_dataloader(self):
