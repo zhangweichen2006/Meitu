@@ -60,6 +60,92 @@ class VerticesLoss(nn.Module):
         loss = (self.loss_fn(pred_vertices, gt_vertices)).sum(dim=(1,2))
         return loss.sum()
 
+def compute_vertex_normals(verts: torch.Tensor,
+                           faces: torch.Tensor,
+                           eps: float = 1e-6) -> torch.Tensor:
+    """
+    verts: (B, V, 3)
+    faces: (F, 3) long, shared across batch
+    return: (B, V, 3) unit vertex normals
+    """
+    # Gather triangle corners
+    v0 = verts[:, faces[:, 0], :]  # (B, F, 3)
+    v1 = verts[:, faces[:, 1], :]
+    v2 = verts[:, faces[:, 2], :]
+    # Face normals (unit)
+    fn = torch.cross(v1 - v0, v2 - v0, dim=-1)                # (B, F, 3)
+    fn = fn / (fn.norm(dim=-1, keepdim=True) + eps)
+
+    # Accumulate to vertices (vectorized; works well on GPU)
+    B, V, _ = verts.shape
+    normals = torch.zeros_like(verts)
+    normals[:, faces[:, 0], :] += fn
+    normals[:, faces[:, 1], :] += fn
+    normals[:, faces[:, 2], :] += fn
+
+    # Normalize vertex normals
+    normals = normals / (normals.norm(dim=-1, keepdim=True) + eps)
+    return normals
+
+
+class PointToPlaneLoss(nn.Module):
+    """
+    Fast point-to-plane between *corresponding* vertices of two SMPL meshes
+    (same topology). Uses GT vertex normals:
+      loss_i = | (p_i - v_i) · n_i_gt |
+    """
+    def __init__(self, reduction: str = "mean", detach_gt: bool = True, eps: float = 1e-6):
+        super().__init__()
+        assert reduction in ("none", "mean", "sum")
+        self.reduction = reduction
+        self.detach_gt = detach_gt
+        self.eps = eps
+
+    @torch.amp.autocast(enabled=False)  # keep normals in FP32 for stability
+    def forward(self,
+                pred_vertices: torch.Tensor,  # (B, V, 3), float
+                gt_vertices: torch.Tensor,    # (B, V, 3), float
+                faces: torch.Tensor,          # (F, 3), long
+                gt_normals: torch.Tensor = None,  # optional (B, V, 3) unit normals
+                mask: torch.Tensor = None,        # optional (B, V) boolean/float
+                weights: torch.Tensor = None      # optional (B, V) float
+                ) -> torch.Tensor:
+
+        # Ensure FP32 for normal math
+        pred = pred_vertices.float()
+        gt   = gt_vertices.float()
+
+        # Compute or use cached GT normals (no grad)
+        if gt_normals is None:
+            if self.detach_gt:
+                gt = gt.detach()
+            with torch.no_grad():
+                n_gt = compute_vertex_normals(gt, faces)
+        else:
+            n_gt = gt_normals.float()
+            # make sure unit length
+            n_gt = n_gt / (n_gt.norm(dim=-1, keepdim=True) + self.eps)
+
+        # |(p - v) · n_gt|
+        diff = (pred - gt)
+        dist = (diff * n_gt).sum(dim=-1).abs()   # (B, V)
+
+        # optional masking/weighting
+        if mask is not None:
+            dist = dist * mask.float()
+        if weights is not None:
+            dist = dist * weights.float()
+
+        if self.reduction == "mean":
+            denom = (mask.float().sum() if mask is not None else dist.numel())
+            loss = dist.sum() / (denom + 1e-6)
+        elif self.reduction == "sum":
+            loss = dist.sum()
+        else:
+            loss = dist  # (B, V)
+
+        return loss
+
 class Keypoint3DLoss(nn.Module):
 
     def __init__(self, loss_type: str = 'l1'):

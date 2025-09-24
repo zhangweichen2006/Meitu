@@ -59,9 +59,9 @@ class DatasetTrainTest(Dataset):
 
         self.img_paths = [os.path.join(self.img_dir, str(p)) for p in self.imgname]
 
-        self.sapiens_normal_version = SAPIENS_TRAINING_NORMAL_VERSION if self.is_train else SAPIENS_TEST_NORMAL_VERSION
-        self.sapiens_normal_version2 = SAPIENS_TRAINING_NORMAL_VERSION2 if self.is_train else SAPIENS_TEST_NORMAL_VERSION2
-        self.replace_version = "training-images" if self.is_train else "test-images"
+        self.sapiens_normal_version = SAPIENS_TRAINING_NORMAL_VERSION if "training-images" in self.img_dir else SAPIENS_TEST_NORMAL_VERSION
+        self.sapiens_normal_version2 = SAPIENS_TRAINING_NORMAL_VERSION2 if "training-images" in self.img_dir else SAPIENS_TEST_NORMAL_VERSION2
+        self.replace_version = "training-images" if "training-images" in self.img_dir else "test-images"
 
         if self.check_file_completeness_and_filter:
             self.valid_paths = np.array([os.path.isfile(p) for p in self.img_paths])
@@ -89,7 +89,7 @@ class DatasetTrainTest(Dataset):
                 if not valid_paths_sapiens_normals.all():
                     num_missing = int((~valid_paths_sapiens_normals).sum())
                     log.warning(f"{self.dataset}: {num_missing} missing sapiens pixel normals. Skipping those samples.")
-                    self.sapiens_normals_path = self.data['sapiens_normals_path'][valid_paths_sapiens_normals]
+                    self.sapiens_normals_path = np.array(self.sapiens_normals_path)[valid_paths_sapiens_normals]
                     self.imgname = np.array(self.imgname)[valid_paths_sapiens_normals].tolist()
                     self.img_paths = np.array(self.img_paths)[valid_paths_sapiens_normals].tolist()
                     self.data = {k: v[valid_paths_sapiens_normals] if v.shape[0] == len(valid_paths_sapiens_normals) else v for k, v in self.data.items()}
@@ -281,11 +281,13 @@ class DatasetTrainTest(Dataset):
         cv_img = cv2.imread(imgname, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
         cv_img = cv_img[:, :, ::-1]
         aspect_ratio, img_full_resized = resize_image(cv_img, 256)
-        # normals are handled inside get_example via normal_path argument
 
         img_full_resized = np.transpose(img_full_resized.astype('float32'),
                         (2, 0, 1))/255.0
+                        
         item['img_full_resized'] = self.normalize_img(torch.from_numpy(img_full_resized).float())
+        # normals are handled inside get_example via normal_path argument
+        # item['normal_full_resized'] = None
 
         item['pose'] = self.pose[index]
         item['betas'] = self.betas[index]
@@ -309,6 +311,7 @@ class DatasetTrainTest(Dataset):
 
         img_patch_rgba = None
         img_patch_cv = None
+
         img_patch_rgba, \
         img_patch_cv,\
         keypoints_2d, \

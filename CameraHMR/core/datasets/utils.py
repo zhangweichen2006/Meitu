@@ -624,7 +624,7 @@ def get_example_projverts(img_path: str|np.ndarray, center_x: float, center_y: f
     return img_patch, img_patch_cv, img_size, center_x, center_y, width, height, keypoints_2d, proj_verts, trans
 
 
-def get_example(img_path: str|np.ndarray, normal_path: str|np.ndarray, center_x: float, center_y: float,
+def get_example(img_path: str|np.ndarray, center_x: float, center_y: float,
                 width: float, height: float,
                 keypoints_2d: np.array,
                 flip_kp_permutation: List[int],
@@ -635,7 +635,7 @@ def get_example(img_path: str|np.ndarray, normal_path: str|np.ndarray, center_x:
                 use_skimage_antialias: bool = False,
                 border_mode: int = cv2.BORDER_CONSTANT,
                 return_trans: bool = False,
-                dataset: str = None):
+                dataset: str = None, normal_path: str|np.ndarray = None):
 
     if isinstance(img_path, str):
         # 1. load image
@@ -648,6 +648,30 @@ def get_example(img_path: str|np.ndarray, normal_path: str|np.ndarray, center_x:
         cvimg = img_path
     else:
         raise TypeError('img_path must be either a string or a numpy array')
+
+    # Load normal image if provided and prepare it inline like cvimg
+    normal_img = None
+    normal_patch = None
+    if isinstance(normal_path, (str, np.ndarray)) and normal_path is not None:
+        if isinstance(normal_path, str) and len(normal_path) > 0 and os.path.isfile(normal_path):
+            normal_loaded = np.load(normal_path, allow_pickle=True)
+            if isinstance(normal_loaded, np.lib.npyio.NpzFile):
+                candidate_keys = ['normal', 'normals', 'data']
+                key_to_use = None
+                for k in candidate_keys:
+                    if k in normal_loaded:
+                        key_to_use = k
+                        break
+                if key_to_use is None and len(normal_loaded.files) > 0:
+                    key_to_use = normal_loaded.files[0]
+                normal_img = normal_loaded[key_to_use]
+            elif isinstance(normal_loaded, np.ndarray):
+                normal_img = normal_loaded
+        elif isinstance(normal_path, np.ndarray):
+            normal_img = normal_path
+        # Apply same dataset rotation
+        if isinstance(normal_img, np.ndarray) and dataset is not None and ('closeup' in dataset or 'portrait' in dataset):
+            normal_img = cv2.rotate(normal_img, cv2.ROTATE_90_CLOCKWISE)
 
     img_height, img_width, img_channels = cvimg.shape
     img_size = np.array([img_height, img_width])
@@ -682,9 +706,13 @@ def get_example(img_path: str|np.ndarray, normal_path: str|np.ndarray, center_x:
         downsampling_factor = (patch_width / (width*scale))
         if downsampling_factor > 1.1:
             cvimg  = gaussian(cvimg, sigma=(downsampling_factor-1)/2, channel_axis=2, preserve_range=True, truncate=3.0)
+            # Apply same blur to normals if present
+            if isinstance(normal_img, np.ndarray):
+                normal_img = gaussian(normal_img, sigma=(downsampling_factor-1)/2, channel_axis=2, preserve_range=True, truncate=3.0)
 
     if do_augment and augm_config.USE_ALB:
         import albumentations as A
+        # those are photometric effects
         aug_comp = [A.Downscale(0.5, 0.9, interpolation=0, p=0.1),
                     A.ImageCompression(20, 100, p=0.1),
                     A.RandomRain(blur_value=4, p=0.1),
@@ -715,6 +743,27 @@ def get_example(img_path: str|np.ndarray, normal_path: str|np.ndarray, center_x:
                                                     do_flip, scale, rot,
                                                     border_mode=border_mode)
 
+    # Generate normal crop with same transform
+    if isinstance(normal_img, np.ndarray):
+        normal_patch_cv, _ = generate_image_patch_cv2(normal_img,
+                                                      center_x, center_y,
+                                                      width, height,
+                                                      patch_width, patch_height,
+                                                      do_flip, scale, rot,
+                                                      border_mode=cv2.BORDER_CONSTANT,
+                                                      border_value=0)
+        # Adjust vector field for flip/rotation if channels correspond to (nx, ny, nz)
+        if do_flip:
+            normal_patch_cv[:, :, 0] *= -1.0
+        if rot != 0:
+            rot_rad = np.deg2rad(rot)
+            c, s = np.cos(rot_rad), np.sin(rot_rad)
+            nx = normal_patch_cv[:, :, 0].copy()
+            ny = normal_patch_cv[:, :, 1].copy()
+            normal_patch_cv[:, :, 0] = c*nx - s*ny
+            normal_patch_cv[:, :, 1] = s*nx + c*ny
+        # Convert to CHW float32 without color normalization
+        normal_patch = convert_cvimg_to_tensor(normal_patch_cv)
 
     image = img_patch_cv.copy()
 
