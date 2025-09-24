@@ -111,7 +111,7 @@ def img_save_and_viz(
     cv2.imwrite(output_path, vis_image)
 
     # Revert processed npy to original resolution and save visualization to output_imgmatch_path
-    reverted_seg = revert_npy(output_seg_file, orig_image, mode="resize")
+    reverted_seg = revert_npy(output_seg_file, orig_image, swapHW=swapHW, mode="resize")
     if reverted_seg.ndim == 3:
         # If returned HWC with channels, convert to single channel labels by argmax
         reverted_labels = reverted_seg.argmax(axis=-1)

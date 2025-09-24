@@ -75,14 +75,16 @@ class DatasetTrainTest(Dataset):
                 self.data = {k: v[self.valid_paths] for k, v in self.data.items()}
                 self.img_paths = np.array(self.img_paths)[self.valid_paths].tolist()
         
-        if 'sapiens_normals_folder' in self.data:
+        if 'sapiens_normals_folder' in self.data and 'normal_swapHW' in self.data and 'normal_preprocess' in self.data:
             sapiens_normals_folder, sapiens_normals_folder2 = self.data['sapiens_normals_folder']
             replace_src, replace_tgt = self.replace_version, self.sapiens_normal_version
             def img_to_normals_path(img_path, replace_src, replace_tgt):
                 base1 = os.path.normpath(img_path.replace(replace_src, replace_tgt))
                 root1, _ = os.path.splitext(base1)
                 return root1 + '.npy'
-
+                
+            self.normal_swapHW = self.data['normal_swapHW']
+            self.normal_preprocess = self.data['normal_preprocess']
             self.sapiens_normals_path = [img_to_normals_path(i, replace_src, replace_tgt) for i in self.img_paths] 
             if self.check_file_completeness_and_filter:
                 valid_paths_sapiens_normals = np.array([os.path.isfile(p) for p in self.sapiens_normals_path])
@@ -159,6 +161,8 @@ class DatasetTrainTest(Dataset):
 
             # save smpl_normals to dataset
             self.data['sapiens_normals_folder'] = (sapiens_normals_folder, sapiens_normals_folder2)
+            self.data['normal_swapHW'] = self.normal_swapHW
+            self.data['normal_preprocess'] = self.normal_preprocess
             np.savez(DATASET_FILES[self.version][dataset], **self.data)
 
         self.scale = self.data['scale']
@@ -326,7 +330,9 @@ class DatasetTrainTest(Dataset):
                                       use_skimage_antialias=self.use_skimage_antialias,
                                       border_mode=self.border_mode,
                                       dataset=self.dataset,
-                                      normal_path=(self.sapiens_normals_path[index] if hasattr(self, 'sapiens_normals_path') and len(self.sapiens_normals_path) > 0 else None)
+                                      normal_path=(self.sapiens_normals_path[index] if hasattr(self, 'sapiens_normals_path') and len(self.sapiens_normals_path) > 0 else None),
+                                      normal_swapHW=self.normal_swapHW,
+                                      normal_preprocess=self.normal_preprocess
                                       )
 
         # TODO: Calculate plucker_embeds

@@ -101,7 +101,7 @@ class PointToPlaneLoss(nn.Module):
         self.detach_gt = detach_gt
         self.eps = eps
 
-    @torch.amp.autocast(enabled=False)  # keep normals in FP32 for stability
+    # @torch.amp.autocast(enabled=False)  # keep normals in FP32 for stability
     def forward(self,
                 pred_vertices: torch.Tensor,  # (B, V, 3), float
                 gt_vertices: torch.Tensor,    # (B, V, 3), float

@@ -7,7 +7,7 @@ import random
 import cv2
 from typing import List, Dict, Tuple
 from yacs.config import CfgNode
-
+from SapiensLite.demo.revert_utils import revert_npy
 
 def resize_image(img, target_size):
     height, width = img.shape[:2]
@@ -635,43 +635,38 @@ def get_example(img_path: str|np.ndarray, center_x: float, center_y: float,
                 use_skimage_antialias: bool = False,
                 border_mode: int = cv2.BORDER_CONSTANT,
                 return_trans: bool = False,
-                dataset: str = None, normal_path: str|np.ndarray = None):
+                dataset: str = None, 
+                normal_path: str|np.ndarray = None, 
+                normal_swapHW: bool = False, 
+                normal_preprocess: str = "resize"):
 
     if isinstance(img_path, str):
         # 1. load image
         cvimg = cv2.imread(img_path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+        cvimg_ori = cvimg.copy()
         if dataset is not None and ('closeup' in dataset or 'portrait' in dataset):
             cvimg = cv2.rotate(cvimg, cv2.ROTATE_90_CLOCKWISE)
         if not isinstance(cvimg, np.ndarray):
             raise IOError("Fail to read %s" % img_path)
     elif isinstance(img_path, np.ndarray):
         cvimg = img_path
+        cvimg_ori = cvimg
     else:
         raise TypeError('img_path must be either a string or a numpy array')
 
     # Load normal image if provided and prepare it inline like cvimg
-    normal_img = None
-    normal_patch = None
+    # before processing, apply the revert_npy function from processed npy to normal
     if isinstance(normal_path, (str, np.ndarray)) and normal_path is not None:
         if isinstance(normal_path, str) and len(normal_path) > 0 and os.path.isfile(normal_path):
-            normal_loaded = np.load(normal_path, allow_pickle=True)
-            if isinstance(normal_loaded, np.lib.npyio.NpzFile):
-                candidate_keys = ['normal', 'normals', 'data']
-                key_to_use = None
-                for k in candidate_keys:
-                    if k in normal_loaded:
-                        key_to_use = k
-                        break
-                if key_to_use is None and len(normal_loaded.files) > 0:
-                    key_to_use = normal_loaded.files[0]
-                normal_img = normal_loaded[key_to_use]
-            elif isinstance(normal_loaded, np.ndarray):
-                normal_img = normal_loaded
+            normal_img = revert_npy(normal_path, cvimg_ori, swapHW=bool(normal_swapHW), mode=str(normal_preprocess))
         elif isinstance(normal_path, np.ndarray):
             normal_img = normal_path
-        # Apply same dataset rotation
-        if isinstance(normal_img, np.ndarray) and dataset is not None and ('closeup' in dataset or 'portrait' in dataset):
-            normal_img = cv2.rotate(normal_img, cv2.ROTATE_90_CLOCKWISE)
+    else:
+        normal_img = None
+
+    # Apply same dataset rotation as image
+    if isinstance(normal_img, np.ndarray) and dataset is not None and ('closeup' in dataset or 'portrait' in dataset):
+        normal_img = cv2.rotate(normal_img, cv2.ROTATE_90_CLOCKWISE)
 
     img_height, img_width, img_channels = cvimg.shape
     img_size = np.array([img_height, img_width])
@@ -764,7 +759,9 @@ def get_example(img_path: str|np.ndarray, center_x: float, center_y: float,
             normal_patch_cv[:, :, 1] = s*nx + c*ny
         # Convert to CHW float32 without color normalization
         normal_patch = convert_cvimg_to_tensor(normal_patch_cv)
-
+    # cv2 visualize normal patch
+    # cv2.imwrite('cvimg.png', cvimg)
+    # cv2.imwrite('normal_patch2.png', (normal_img*0.5+0.5)*255)
     image = img_patch_cv.copy()
 
     if is_bgr:
