@@ -125,7 +125,10 @@ def revert_npy(
         channels_first = _invert_zoom(channels_first, proc_h, proc_w)
 
     orig_h, orig_w = orig_image.shape[:2]
-    pre_h, pre_w = (orig_w, orig_h) if swapHW else (orig_h, orig_w)
+    # Rotate first to final orientation to avoid large gaps with align_corners=False
+    if swapHW:
+        channels_first = torch.rot90(channels_first, k=1, dims=(1, 2))
+    pre_h, pre_w = (orig_h, orig_w)
     tgt_h, tgt_w = proc_h, proc_w
 
     if mode in ["resize", "pad_resize"]:
@@ -138,8 +141,7 @@ def revert_npy(
         else:
             inv_pre = _invert_cropping_landscape(channels_first, pre_h, pre_w, tgt_h, tgt_w, do_resize_flag, is_zoom)
 
-    if swapHW:
-        inv_pre = torch.rot90(inv_pre, k=1, dims=(1, 2))
+    # No rotation here; handled before resizing
 
     if inv_pre.shape[0] == 1:
         return inv_pre.squeeze(0).float().cpu().numpy()

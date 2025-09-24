@@ -8,6 +8,7 @@ import threading
 import json
 import gradio as gr
 import os
+import cv2
 
 _latest_image = None
 _latest_object = None
@@ -331,3 +332,12 @@ def vis_smpl(smpl_output):
     cv2.imshow('SMPL', render_img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
+def denorm_and_save_img(x, cfg, save_path='input.png'):
+
+    mean = torch.tensor(cfg.MODEL.IMAGE_MEAN, device=x.device) * 255.0
+    std  = torch.tensor(cfg.MODEL.IMAGE_STD,  device=x.device) * 255.0
+
+    x_denorm = x * std[None, :, None, None] + mean[None, :, None, None]
+    img = x_denorm[0].permute(1, 2, 0).clamp(0, 255).byte().cpu().numpy()  # RGB
+    cv2.imwrite(save_path, img[:, :, ::-1])  # convert to BGR for cv2
