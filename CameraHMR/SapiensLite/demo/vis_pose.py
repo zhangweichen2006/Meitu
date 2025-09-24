@@ -93,7 +93,7 @@ def batch_inference_topdown(
 
 
 def img_save_and_vis(
-    orig_image, results, output_path, output_imgmatch_path, input_shape, heatmap_scale, kpt_colors, kpt_thr, radius, skeleton_info, thickness
+    orig_image, results, output_path, output_imgmatch_path, input_shape, heatmap_scale, kpt_colors, kpt_thr, radius, skeleton_info, thickness, swapHW
 ):
     # pred_instances_list = split_instances(result)
     heatmap = results["heatmaps"]
@@ -192,7 +192,7 @@ def img_save_and_vis(
     proc_npy = output_path.replace('.jpg', '.npy').replace('.png', '.npy').replace('.jpeg', '.npy')
     np.save(proc_npy, coverage)
 
-    reverted_cov = revert_npy(proc_npy, orig_image, mode="resize")
+    reverted_cov = revert_npy(proc_npy, orig_image, swapHW=swapHW, mode="resize")
     output_imgmatch_npy = output_imgmatch_path.replace('.jpg', '.npy').replace('.png', '.npy').replace('.jpeg', '.npy')
     np.save(output_imgmatch_npy, reverted_cov)
 
@@ -517,6 +517,7 @@ def main():
                 args.radius,
                 SKELETON_INFO,
                 args.thickness,
+                args.swapHW,
             )
             for orig_i, r, img_name in zip(
                 batch_orig_imgs[:valid_images_len],

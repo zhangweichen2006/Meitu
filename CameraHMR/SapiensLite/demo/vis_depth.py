@@ -70,9 +70,9 @@ def load_and_preprocess(img, shape):
     return orig_img, img
 
 
-def img_save_and_viz(orig_image, proc_image, result, output_path, output_imgmatch_path, seg_dir):
+def img_save_and_viz(orig_image, proc_image, result, output_path, output_imgmatch_path, seg_dir, swapHW):
     seg_logits = F.interpolate(
-        result.unsqueeze(0), size=proc_image.shape[:2], mode="bilinear"
+        result.unsqueeze(0), size=proc_image.shape[:2], mode="bilinear", align_corners=True
     ).squeeze(0)
 
     depth_map = seg_logits.data.float().numpy()[0]  ## H x W
@@ -159,7 +159,7 @@ def img_save_and_viz(orig_image, proc_image, result, output_path, output_imgmatc
     cv2.imwrite(output_path, vis_image)
 
     # Revert depth to original and save to imgmatch path
-    reverted_depth = revert_npy(save_path, orig_image, mode="resize")
+    reverted_depth = revert_npy(save_path, orig_image, swapHW=swapHW, mode="resize")
     output_imgmatch_npy = (
         output_imgmatch_path.replace(".jpg", ".png").replace(".jpeg", ".png").replace(".png", ".npy")
     )
@@ -402,6 +402,7 @@ def main():
                 out_name,
                 out_imgmatch_name,
                 args.seg_dir,
+                args.swapHW,
             )
             for o, i, r, out_name, out_imgmatch_name in zip(
                 batch_orig_imgs,

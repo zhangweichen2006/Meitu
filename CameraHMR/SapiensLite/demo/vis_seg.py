@@ -59,7 +59,7 @@ def fake_pad_images_to_batchsize(imgs):
 
 
 def img_save_and_viz(
-    orig_image, proc_image, result, output_path, output_imgmatch_path, classes, palette, title=None, opacity=0.5, threshold=0.3,
+    orig_image, proc_image, result, output_path, output_imgmatch_path, swapHW, classes, palette, title=None, opacity=0.5, threshold=0.3,
 ):
     output_file = (
         output_path.replace(".jpg", ".png")
@@ -76,7 +76,7 @@ def img_save_and_viz(
         proc_image = proc_image.cpu().numpy()  ## bgr image
 
     seg_logits = F.interpolate(
-        result.unsqueeze(0), size=proc_image.shape[:2], mode="bilinear"
+        result.unsqueeze(0), size=proc_image.shape[:2], mode="bilinear", align_corners=True
     ).squeeze(0)
 
     if seg_logits.shape[0] > 1:
@@ -354,6 +354,7 @@ def main():
                 r,
                 out_name,
                 out_imgmatch_name,
+                args.swapHW,
                 GOLIATH_CLASSES,
                 GOLIATH_PALETTE,
                 args.title,
