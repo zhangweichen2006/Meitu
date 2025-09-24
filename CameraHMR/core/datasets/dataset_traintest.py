@@ -10,7 +10,7 @@ import pickle
 import numpy as np
 from torch.utils.data import Dataset
 from ..utils.pylogger import get_pylogger
-from ..configs import DATASET_FOLDERS, DATASET_FILES, SAPIENS_TRAINING_NORMAL_VERSION, SAPIENS_TEST_NORMAL_VERSION
+from ..configs import DATASET_FOLDERS, DATASET_FILES, SAPIENS_TRAINING_NORMAL_VERSION, SAPIENS_TEST_NORMAL_VERSION, SAPIENS_TRAINING_NORMAL_VERSION2, SAPIENS_TEST_NORMAL_VERSION2, NORMAL_PREPROCESS
 from .utils import expand_to_aspect_ratio, get_example, resize_image
 from torchvision.transforms import Normalize
 from ..constants import FLIP_KEYPOINT_PERMUTATION, NUM_JOINTS, NUM_BETAS, NUM_PARAMS_SMPL, NUM_PARAMS_SMPLX, SMPLX2SMPL, SMPLX_MODEL_DIR, SMPL_MODEL_DIR
@@ -85,22 +85,30 @@ class DatasetTrainTest(Dataset):
                 self.sapiens_pixel_normals_path = self.data['sapiens_pixel_normals_path']
         else:
             # check folder
+            self.normal_preprocess = NORMAL_PREPROCESS[self.version][self.dataset]['preprocess']
+            self.normal_swapHW = NORMAL_PREPROCESS[self.version][self.dataset]['swapHW']
 
             normal_version = SAPIENS_TRAINING_NORMAL_VERSION if self.is_train else SAPIENS_TEST_NORMAL_VERSION
             replace_version = "training-images" if self.is_train else "test-images"
+            normal_version2 = SAPIENS_TRAINING_NORMAL_VERSION2 if self.is_train else SAPIENS_TEST_NORMAL_VERSION2
 
             sapiens_normal_folder = self.img_dir.replace(replace_version, normal_version) if self.is_train else self.img_dir.replace(replace_version, normal_version)
 
             if not os.path.exists(sapiens_normal_folder):
-                log.info(f'Processing sapiens pixel normals ...')
-                sapiens_ckpt = cfg.paths.get('sapiens_normal_ckpt', os.environ.get('SAPIENS_NORMAL_CKPT', None))
-                self.infer_batch_size = cfg.pretrained_models.sapiens.get('infer_batch_size', 4)
-                # sapiens_normal_model = SapiensNormalWrapper() # SLOW...
-                # TODO: port script
-                raise NotImplementedError('Sapiens normal model is not implemented')
+                sapiens_normal_folder = self.img_dir.replace(replace_version, normal_version2) if self.is_train else self.img_dir.replace(replace_version, normal_version2)
+
+                if not os.path.exists(sapiens_normal_folder):
+                    log.error(f'Sapiens normal folder does not exist: {sapiens_normal_folder}')
+
+                    log.info(f'Processing sapiens pixel normals ...')
+                    sapiens_ckpt = cfg.paths.get('sapiens_normal_ckpt', os.environ.get('SAPIENS_NORMAL_CKPT', None))
+                    self.infer_batch_size = cfg.pretrained_models.sapiens.get('infer_batch_size', 4)
+                    # sapiens_normal_model = SapiensNormalWrapper() # SLOW...
+                    # TODO: port script
+                    raise NotImplementedError('Sapiens normal model is not implemented')
 
             sapiens_pixel_normals_path = [i.replace(self.img_dir, sapiens_normal_folder) for i in self.img_paths]
-            
+
             if self.check_file_completeness_and_filter:
                 valid_paths_sapiens_normals = np.array([os.path.isfile(p) for p in sapiens_pixel_normals_path])
                 if not valid_paths_sapiens_normals.all():

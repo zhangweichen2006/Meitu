@@ -53,13 +53,59 @@ DATASET_FOLDERS = {
 
 }
 
-SAPIENS_TRAINING_NORMAL_VERSION = 'training-images-sapiens-normals-DirectResize'
-SAPIENS_TEST_NORMAL_VERSION = 'test-images-sapiens-normals-DirectResize'
+SAPIENS_TRAINING_NORMAL_VERSION = 'training-images-sapiens-normals-DirectResize-local'
+SAPIENS_TEST_NORMAL_VERSION = 'test-images-sapiens-normals-DirectResize-local'
 
+SAPIENS_TRAINING_NORMAL_VERSION2 = 'training-images-sapiens-normals-DirectResize'
+SAPIENS_TEST_NORMAL_VERSION2 = 'test-images-sapiens-normals-DirectResize'
 
-SAPIENS_TRAINING_NORMAL_VERSION2 = 'training-images-sapiens-normals'
-SAPIENS_TEST_NORMAL_VERSION2 = 'test-images-sapiens-normals'
+# NEEDED FOR INVERSE NORMAL PROCESSING
+NORMAL_PREPROCESS = {
+    'traintest': {
+        '3dpw-test-cam-smpl':{'preprocess':'resize', 'swapHW': False},
+        'emdb-smpl':{'preprocess':'resize', 'swapHW': False},
+        'rich-smplx':{'preprocess':'resize', 'swapHW': False},
+        'spec-test-smpl':{'preprocess':'resize', 'swapHW': False},
+        'coco-val-smpl':{'preprocess':'resize', 'swapHW': False},
 
+        'emdb-smpl':{'preprocess':'resize', 'swapHW': False},
+        'aic':{'preprocess':'resize', 'swapHW': False},
+        'insta-1':{'preprocess':'resize', 'swapHW': False},
+        'insta-2':{'preprocess':'resize', 'swapHW': False},
+        'coco-train':{'preprocess':'resize', 'swapHW': False},
+        'mpii-train':{'preprocess':'resize', 'swapHW': False},
+
+        'agora-body-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'zoom-suburbd-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'closeup-suburba-bbox44':{'preprocess':'resize', 'swapHW': True},
+        'closeup-suburbb-bbox44':{'preprocess':'resize', 'swapHW': True},
+        'closeup-suburbc-bbox44':{'preprocess':'resize', 'swapHW': True},
+        'closeup-suburbd-bbox44':{'preprocess':'resize', 'swapHW': True},
+        'closeup-gym-bbox44':{'preprocess':'resize', 'swapHW': True},
+        'zoom-gym-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'static-gym-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'static-office-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'orbit-office-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'orbit-archviz-15-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'orbit-archviz-19-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'orbit-archviz-12-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'orbit-archviz-10-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'static-hdri-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'static-hdri-zoomed-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'staticzoomed-suburba-frameocc-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'pitchup-stadium-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'static-hdri-bmi-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'closeup-suburbb-bmi-bbox44':{'preprocess':'resize', 'swapHW': True},
+        'closeup-suburbc-bmi-bbox44':{'preprocess':'resize', 'swapHW': True},
+        'static-suburbd-bmi-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'zoom-gym-bmi-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'pitchdown-stadium-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'static-office-hair-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'zoom-suburbd-hair-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'static-gym-hair-bbox44':{'preprocess':'resize', 'swapHW': False},
+        'orbit-stadium-bmi-bbox44':{'preprocess':'resize', 'swapHW': False}
+    }
+}
 
 DATASET_FILES = {
     'traintest': {
