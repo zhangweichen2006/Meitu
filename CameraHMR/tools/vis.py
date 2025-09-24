@@ -9,6 +9,7 @@ import json
 import gradio as gr
 import os
 import cv2
+from core.utils.renderer_pyrd import Renderer
 
 _latest_image = None
 _latest_object = None
@@ -341,3 +342,17 @@ def denorm_and_save_img(x, cfg, save_path='input.png'):
     x_denorm = x * std[None, :, None, None] + mean[None, :, None, None]
     img = x_denorm[0].permute(1, 2, 0).clamp(0, 255).byte().cpu().numpy()  # RGB
     cv2.imwrite(save_path, img[:, :, ::-1])  # convert to BGR for cv2
+
+def save_smpl(smpl_output, focal_length, save_path='smpl.png'):
+    import cv2
+    import open3d as o3d
+    import numpy as np
+    import smplx
+    smpl_output.vertices = smpl_output.vertices.detach().cpu().numpy()
+    smpl_output.joints = smpl_output.joints.detach().cpu().numpy()
+    from smplx import SMPL
+    smpl_model = SMPL(model_path='data/models/SMPL/SMPL_NEUTRAL.pkl', gender='NEUTRAL')
+    smpl_output.faces = smpl_model.faces
+    renderer = Renderer(focal_length=focal_length, img_w=256, img_h=256, faces=smpl_output.faces, same_mesh_color=True)
+    render_img = renderer.render_front_view(smpl_output.vertices)
+    cv2.imwrite(save_path, render_img)

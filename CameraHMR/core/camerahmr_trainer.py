@@ -32,9 +32,11 @@ from .constants import (
     REGRESSOR_H36M, VITPOSE_BACKBONE, SMPL_MODEL_DIR
 )
 from .losses import SMPLNormalLoss
+# normals util
+from .utils.smpl_utils import compute_normals_torch
 # visualize images and normals
 import cv2
-# from ..tools.vis import denorm_and_save_img
+from ..tools.vis import denorm_and_save_img
 
 log = get_pylogger(__name__)
 
@@ -192,6 +194,15 @@ class CameraHMR(pl.LightningModule):
         output['pred_keypoints_3d'] = pred_keypoints_3d.reshape(batch_size, -1, 3)
         output['pred_vertices'] = pred_vertices.reshape(batch_size, -1, 3)
 
+        # Compute predicted SMPL vertex normals (B, V, 3)
+        try:
+            faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=pred_vertices.device)
+            output['pred_vertex_normals'] = compute_normals_torch(output['pred_vertices'], faces_t)
+        except Exception:
+            # Keep training robust if faces/normals computation fails for some reason
+            logger.warning(f"Failed to compute predicted SMPL vertex normals for batch:{batch['imgname']}.")
+            output['pred_vertex_normals'] = None
+
         # Store useful regression outputs to the output dict
         output['pred_cam'] = pred_cam
         output['pred_smpl_params'] = {k: v.clone() for k,v in pred_smpl_params.items()}
@@ -284,7 +295,7 @@ class CameraHMR(pl.LightningModule):
         loss_keypoints_3d = self.keypoint_3d_loss(pred_keypoints_3d, gt_keypoints_3d, pelvis_id=25+14)
         faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=output['pred_vertices'].device)
         loss_vertices = self.vertices_loss_l1l2(output['pred_vertices'], batch['gt_vertices'])
-        loss_vertices_p2p = self.vertices_loss_p2p(output['pred_vertices'], batch['gt_vertices'], faces_t)
+        loss_vertices_pt2plane = self.vertices_loss_p2p(output['pred_vertices'], batch['gt_vertices'], faces_t)
 
         # Compute loss on SMPL parameters
         loss_smpl_params = {}
@@ -297,14 +308,14 @@ class CameraHMR(pl.LightningModule):
         loss = self.cfg.LOSS_WEIGHTS['KEYPOINTS_3D'] * loss_keypoints_3d +\
                 sum([loss_smpl_params[k] * self.cfg.LOSS_WEIGHTS[k.upper()] for k in loss_smpl_params])+\
                 self.cfg.LOSS_WEIGHTS['VERTICES'] * loss_vertices +\
-                self.cfg.LOSS_WEIGHTS.get('VERTICES_P2P', 0.0) * loss_vertices_p2p
+                self.cfg.LOSS_WEIGHTS.get('VERTICES_P2PL', 0.0) * loss_vertices_pt2plane
 
-        # Optional SMPL vertex normal cosine loss (uses SMPLNormalLoss)
+        # SMPL vertex normal cosine loss (uses SMPLNormalLoss)
         w_normals = self.cfg.LOSS_WEIGHTS.get('SMPL_NORMALS', 0.0)
         if w_normals and ('gt_vertices' in batch):
             faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=pred_vertices.device)
-            imgnames = batch.get('imgname', None)
-            loss_normals = self.smpl_normal_loss(pred_vertices, batch['gt_vertices'], faces_t, imgnames=imgnames)
+            # imgnames = batch.get('imgname', None)
+            loss_normals = self.smpl_normal_loss(pred_vertices, batch['gt_vertices'], faces_t) #, imgnames=imgnames
             loss = loss + w_normals * loss_normals
 
 
@@ -374,7 +385,7 @@ class CameraHMR(pl.LightningModule):
         losses = dict(loss=loss.detach(),
                       loss_keypoints_3d=loss_keypoints_3d.detach(),
                       loss_vertices=loss_vertices.detach(),
-                      loss_vertices_p2p=loss_vertices_p2p.detach(),
+                      loss_vertices_pt2plane=loss_vertices_pt2plane.detach(),
                       loss_kp2d_cropped=loss_keypoints_2d_cropped.detach())
         for k, v in loss_smpl_params.items():
             losses['loss_' + k] = v.detach()

@@ -67,29 +67,33 @@ def compute_normals_torch(vertices: torch.Tensor, faces: torch.Tensor, eps=1e-12
     Returns:
         Tensor of shape (V, 3) or (B, V, 3) with L2-normalized vertex normals.
     """
+    if vertices.dim() not in (2, 3):
+        raise ValueError("vertices must have shape (V,3) or (B,V,3)")
+
+    squeeze_back = False
     if vertices.dim() == 2:
-        vertices = vertices.unsqueeze(0)       # (1, V, 3)
-        B, V, _ = vertices.shape
-        Fnum = faces.shape[0]
-        device = vertices.device
-        faces = faces.to(device=device, dtype=torch.long)
+        vertices = vertices.unsqueeze(0)  # (1, V, 3)
+        squeeze_back = True
 
-        b = torch.arange(B, device=device)[:, None]
-        v0 = vertices[b, faces[:, 0]]
-        v1 = vertices[b, faces[:, 1]]
-        v2 = vertices[b, faces[:, 2]]
+    B, V, _ = vertices.shape
+    device = vertices.device
+    faces = faces.to(device=device, dtype=torch.long)
 
-        # 面法线：不要先 normalize（长度∝面积）
-        fn = torch.cross(v1 - v0, v2 - v0, dim=-1)     # (B, F, 3)
+    # Gather triangle corners (batched)
+    v0 = vertices[:, faces[:, 0], :]  # (B, F, 3)
+    v1 = vertices[:, faces[:, 1], :]
+    v2 = vertices[:, faces[:, 2], :]
 
-        # 顶点累加
-        vn = torch.zeros((B, V, 3), device=device, dtype=vertices.dtype)
-        vn.index_add_(1, faces[:, 0], fn)
-        vn.index_add_(1, faces[:, 1], fn)
-        vn.index_add_(1, faces[:, 2], fn)
+    # Face normals (area-weighted)
+    fn = torch.cross(v1 - v0, v2 - v0, dim=-1)  # (B, F, 3)
 
-        # 顶点单位化
-        vn = F.normalize(vn, dim=-1, eps=eps)
-        return vn.squeeze(0) if vn.shape[0] == 1 else vn
+    # Accumulate to vertices
+    vn = torch.zeros((B, V, 3), device=device, dtype=vertices.dtype)
+    vn.index_add_(1, faces[:, 0], fn)
+    vn.index_add_(1, faces[:, 1], fn)
+    vn.index_add_(1, faces[:, 2], fn)
 
+    # Normalize per-vertex
+    vn = F.normalize(vn, dim=-1, eps=eps)
 
+    return vn.squeeze(0) if squeeze_back else vn

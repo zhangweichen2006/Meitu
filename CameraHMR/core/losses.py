@@ -95,7 +95,7 @@ class PointToPlaneLoss(nn.Module):
     (same topology). Uses GT vertex normals:
       loss_i = | (p_i - v_i) · n_i_gt |
     """
-    def __init__(self, reduction: str = "mean", detach_gt: bool = True, eps: float = 1e-6):
+    def __init__(self, reduction: str = "sum", detach_gt: bool = True, eps: float = 1e-6):
         super().__init__()
         assert reduction in ("none", "mean", "sum")
         self.reduction = reduction
@@ -260,5 +260,5 @@ class SMPLNormalLoss(nn.Module):
         per_vertex_loss = 1.0 - cos_sim.abs() # TODO: orientation-agnostic, check later
 
         # Average over vertices, then sum over batch (match style of other losses)
-        loss = per_vertex_loss.mean(dim=1).sum()
+        loss = per_vertex_loss.sum(dim=1).sum()
         return loss
