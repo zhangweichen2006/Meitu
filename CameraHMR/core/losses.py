@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from .utils.smpl_utils import compute_normals_torch
 
 class Keypoint2DLoss(nn.Module):
 
@@ -109,3 +111,41 @@ class TranslationLoss(nn.Module):
 
         loss = self.loss_fn(pred_trans, gt_trans)
         return loss.sum()
+
+class SMPLNormalLoss(nn.Module):
+
+    def __init__(self, loss_type: str = 'cos'):
+        super(SMPLNormalLoss, self).__init__()
+        if loss_type == 'cos':
+            self.loss_fn = nn.CosineEmbeddingLoss(reduction='none')
+        else:
+            raise NotImplementedError('Unsupported loss function')
+
+    def forward(self, pred_vertices: torch.Tensor, gt_vertices: torch.Tensor, faces: torch.Tensor) -> torch.Tensor:
+        """
+        Compute per-vertex normal loss between predicted and GT SMPL meshes.
+
+        Args:
+            pred_vertices: (B, V, 3) predicted mesh vertices.
+            gt_vertices: (B, V, 3) ground-truth mesh vertices.
+            faces: (F, 3) long tensor of shared topology indices.
+
+        Returns:
+            Scalar loss (summed over batch and vertices), cosine-based: 1 - cos(theta).
+        """
+        # Ensure tensors are float and on same device
+        device = pred_vertices.device
+        gt_vertices = gt_vertices.to(device=device)
+        faces = faces.to(device=device, dtype=torch.long)
+
+        # Compute area-weighted vertex normals, normalized per-vertex
+        pred_normals = compute_normals_torch(pred_vertices, faces)   # (B, V, 3)
+        gt_normals = compute_normals_torch(gt_vertices, faces)       # (B, V, 3)
+
+        # Cosine similarity per vertex (orientation-agnostic via absolute value)
+        cos_sim = F.cosine_similarity(pred_normals, gt_normals, dim=-1)  # (B, V)
+        per_vertex_loss = 1.0 - cos_sim.abs() # TODO: orientation-agnostic, check later
+
+        # Average over vertices, then sum over batch (match style of other losses)
+        loss = per_vertex_loss.mean(dim=1).sum()
+        return loss

@@ -107,14 +107,14 @@ class DatasetTrainTest(Dataset):
                     # TODO: port script
                     raise NotImplementedError('Sapiens normal model is not implemented')
 
-            sapiens_pixel_normals_path = [i.replace(self.img_dir, sapiens_normal_folder) for i in self.img_paths]
+            sapiens_pixel_normals_path = [i.replace(self.img_dir, sapiens_normal_folder).replace('.jpg', '.npz').replace('.jpeg', '.npz').replace('.png', '.npz') for i in self.img_paths]
 
             if self.check_file_completeness_and_filter:
                 valid_paths_sapiens_normals = np.array([os.path.isfile(p) for p in sapiens_pixel_normals_path])
                 if not valid_paths_sapiens_normals.all():
                     num_missing = int((~valid_paths_sapiens_normals).sum())
                     log.warning(f"{self.dataset}: {num_missing} missing sapiens pixel normals. Skipping those samples.")
-                    self.sapiens_pixel_normals_path = sapiens_pixel_normals_path[valid_paths_sapiens_normals]
+                    sapiens_pixel_normals_path = np.array(sapiens_pixel_normals_path)[valid_paths_sapiens_normals]
                     self.imgname = self.imgname[valid_paths_sapiens_normals]
                     self.img_paths = np.array(self.img_paths)[valid_paths_sapiens_normals].tolist()
                     self.data = {k: v[valid_paths_sapiens_normals] if v.shape[0] == len(valid_paths_sapiens_normals) else v for k, v in self.data.items()}
@@ -125,7 +125,7 @@ class DatasetTrainTest(Dataset):
 
             # save smpl_normals to dataset
             sapiens_pixel_normals_data_arrays = {k: self.data[k] for k in self.data.files}
-            sapiens_pixel_normals_data_arrays['sapiens_pixel_normals_path'] = self.sapiens_pixel_normals_path
+            sapiens_pixel_normals_data_arrays['sapiens_pixel_normals_path'] = sapiens_pixel_normals_path
             np.savez(DATASET_FILES[self.version][dataset], **sapiens_pixel_normals_data_arrays)
 
         self.scale = self.data['scale']
