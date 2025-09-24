@@ -465,7 +465,7 @@ def main():
                 batch_out_imgmatch_name
             )
         ]
-        print("inferencing:", args_list[0][2])
+        print("inferencing:", args_list[0][3])
         img_save_pool.run_async(args_list)
 
     img_save_pool.finish()
