@@ -54,7 +54,7 @@ class DatasetTrainTest(Dataset):
         self.img_dir = DATASET_FOLDERS[dataset]
         self.data = np.load(DATASET_FILES[version][dataset], allow_pickle=True)
         self.data = {k: v for k, v in self.data.items()}
-        self.imgname = self.data['imgname']
+        self.imgname = self.data['imgname'].tolist()
 
         self.img_paths = [os.path.join(self.img_dir, str(p)) for p in self.imgname]
 
@@ -66,7 +66,7 @@ class DatasetTrainTest(Dataset):
                 num_missing = int((~self.valid_paths).sum())
                 log.warning(f"{self.dataset}: {num_missing} missing images. Skipping those samples.")
                 # Apply mask to all per-sample arrays
-                self.imgname = self.imgname[self.valid_paths]
+                self.imgname = np.array(self.imgname)[self.valid_paths].tolist()
                 self.data = {k: v[self.valid_paths] for k, v in self.data.items()}
                 self.img_paths = np.array(self.img_paths)[self.valid_paths].tolist()
 
@@ -77,7 +77,7 @@ class DatasetTrainTest(Dataset):
                     num_missing = int((~valid_paths_sapiens_normals).sum())
                     log.warning(f"{self.dataset}: {num_missing} missing sapiens pixel normals. Skipping those samples.")
                     self.sapiens_pixel_normals_path = self.data['sapiens_pixel_normals_path'][valid_paths_sapiens_normals]
-                    self.imgname = self.imgname[valid_paths_sapiens_normals]
+                    self.imgname = np.array(self.imgname)[valid_paths_sapiens_normals].tolist()
                     self.img_paths = np.array(self.img_paths)[valid_paths_sapiens_normals].tolist()
                     self.data = {k: v[valid_paths_sapiens_normals] if v.shape[0] == len(valid_paths_sapiens_normals) else v for k, v in self.data.items()}
                     for k, v in self.data.items():
@@ -116,15 +116,14 @@ class DatasetTrainTest(Dataset):
                     num_missing = int((~valid_paths_sapiens_normals).sum())
                     log.warning(f"{self.dataset}: {num_missing} missing sapiens pixel normals. Skipping those samples.")
                     sapiens_pixel_normals_path = np.array(sapiens_pixel_normals_path)[valid_paths_sapiens_normals].tolist()
-                    self.imgname = self.imgname[valid_paths_sapiens_normals]
+                    self.imgname = np.array(self.imgname)[valid_paths_sapiens_normals].tolist()
                     self.img_paths = np.array(self.img_paths)[valid_paths_sapiens_normals].tolist()
             else:
                 self.sapiens_pixel_normals_path = sapiens_pixel_normals_path
 
             # save smpl_normals to dataset
-            sapiens_pixel_normals_data_arrays = {k: self.data[k] for k in self.data.items()}
-            sapiens_pixel_normals_data_arrays['sapiens_pixel_normals_path'] = sapiens_pixel_normals_path
-            np.savez(DATASET_FILES[self.version][dataset], **sapiens_pixel_normals_data_arrays)
+            self.data['sapiens_pixel_normals_path'] = sapiens_pixel_normals_path
+            np.savez(DATASET_FILES[self.version][dataset], **self.data)
 
         self.scale = self.data['scale']
         self.center = self.data['center']
@@ -189,13 +188,13 @@ class DatasetTrainTest(Dataset):
         if 'cam_ext' in self.data:
             self.cam_ext = self.data['cam_ext']
         else:
-            self.cam_ext = np.zeros((self.imgname.shape[0], 4, 4))
+            self.cam_ext = np.zeros((len(self.imgname), 4, 4))
 
         #Only for BEDLAM and AGORA
         if 'trans_cam' in self.data:
             self.trans_cam = self.data['trans_cam']
         else:
-            self.trans_cam = np.zeros((self.imgname.shape[0],3))
+            self.trans_cam = np.zeros((len(self.imgname),3))
 
         if 'smpl_normals' in self.data:
             self.smpl_normals = self.data['smpl_normals']
@@ -215,9 +214,8 @@ class DatasetTrainTest(Dataset):
                 smpl_normals_arr.append(vertex_normals.detach().cpu().numpy()) # trimesh vertex_normal (area-weighted) is different from open3d and this torch computed normal (angle-weighted)
             self.smpl_normals = np.array(smpl_normals_arr)
             # save smpl_normals to dataset
-            data_arrays = {k: self.data[k] for k in self.data.items()}
-            data_arrays['smpl_normals'] = self.smpl_normals
-            np.savez(DATASET_FILES[self.version][dataset], **data_arrays)
+            self.data['smpl_normals'] = self.smpl_normals
+            np.savez(DATASET_FILES[self.version][dataset], **self.data)
 
 
 
@@ -247,7 +245,7 @@ class DatasetTrainTest(Dataset):
         cv_img = cv2.imread(imgname, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
         cv_img = cv_img[:, :, ::-1]
         aspect_ratio, img_full_resized = resize_image(cv_img, 256)
-        if 'sapiens_pixel_normals_path' in self.data.items():
+        if 'sapiens_pixel_normals_path' in self.data:
             normal_imgname = self.sapiens_pixel_normals_path[index]
             normal_data = np.load(normal_imgname)
             normal_full_resized = resize_image(normal_imgname, 256)
@@ -273,7 +271,7 @@ class DatasetTrainTest(Dataset):
             item['smpl_params'] = smpl_params
 
         item['translation'] = self.cam_ext[index][:, 3]
-        if 'trans_cam' in self.data.items():
+        if 'trans_cam' in self.data:
             item['translation'][:3] += self.trans_cam[index]
 
         img_patch_rgba = None
@@ -355,12 +353,12 @@ class DatasetTrainTest(Dataset):
             item['keypoints_3d'] = torch.matmul(model.J_regressor, gt_vertices[0])
             item['vertices'] = gt_vertices[0].float()
 
-        if 'smpl_normals' in self.data.items():
+        if 'smpl_normals' in self.data:
             item['smpl_normals'] = self.smpl_normals[index]
         else:
             item['smpl_normals'] = np.zeros((1, 6890, 3))
 
-        if 'sapiens_pixel_normals_path' in self.data.items():
+        if 'sapiens_pixel_normals_path' in self.data:
             item['sapiens_pixel_normals_path'] = self.sapiens_pixel_normals_path[index]
         else:
             item['sapiens_pixel_normals_path'] = np.zeros((1, 1, 1))
