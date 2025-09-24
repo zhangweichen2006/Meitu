@@ -62,7 +62,7 @@ def _invert_cropping_portrait(
 
     inv_crop = _center_embed_or_crop(res_chw, new_h, new_w)
     if resize_ratio is not None and (new_h != pre_h or new_w != pre_w):
-        return F.interpolate(inv_crop.unsqueeze(0), size=(pre_h, pre_w), mode="bilinear", align_corners=False).squeeze(0)
+        return F.interpolate(inv_crop.unsqueeze(0), size=(pre_h, pre_w), mode="bilinear", align_corners=True).squeeze(0)
     return inv_crop
 
 
@@ -83,13 +83,13 @@ def _invert_cropping_landscape(
     undo_vert = _center_embed_or_crop(undo_width, new_h, new_w)
 
     if resized and (new_h != pre_h or new_w != pre_w):
-        return F.interpolate(undo_vert.unsqueeze(0), size=(pre_h, pre_w), mode="bilinear", align_corners=False).squeeze(0)
+        return F.interpolate(undo_vert.unsqueeze(0), size=(pre_h, pre_w), mode="bilinear", align_corners=True).squeeze(0)
     return undo_vert
 
 
 def _invert_zoom(res_chw: torch.Tensor, target_h: int, target_w: int) -> torch.Tensor:
     half_h, half_w = target_h // 2, target_w // 2
-    down = F.interpolate(res_chw.unsqueeze(0), size=(half_h, half_w), mode="bilinear", align_corners=False).squeeze(0)
+    down = F.interpolate(res_chw.unsqueeze(0), size=(half_h, half_w), mode="bilinear", align_corners=True).squeeze(0)
     canvas = torch.zeros_like(res_chw)
     y0 = (target_h - half_h) // 2
     x0 = (target_w - half_w) // 2
@@ -129,7 +129,7 @@ def revert_npy(
     tgt_h, tgt_w = proc_h, proc_w
 
     if mode in ["resize", "pad_resize"]:
-        inv_pre = F.interpolate(channels_first.unsqueeze(0), size=(pre_h, pre_w), mode="bilinear", align_corners=False).squeeze(0)
+        inv_pre = F.interpolate(channels_first.unsqueeze(0), size=(pre_h, pre_w), mode="bilinear", align_corners=True).squeeze(0)
     else:
         do_resize_flag = (mode == "crop_resize")
         is_zoom = (mode == "zoom_to_3Dpt")

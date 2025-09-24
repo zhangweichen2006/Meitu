@@ -63,7 +63,7 @@ def _invert_zoom(res_chw, target_h, target_w):
         res_chw.unsqueeze(0),
         size=(half_h, half_w),
         mode="bilinear",
-        align_corners=False,
+        align_corners=True,
     ).squeeze(0)
     canvas = torch.zeros_like(res_chw)
     y0 = (target_h - half_h) // 2
@@ -127,7 +127,7 @@ def _invert_cropping_portrait(res_chw, pre_h, pre_w, tgt_h, tgt_w, do_resize):
             inv_crop.unsqueeze(0),
             size=(pre_h, pre_w),
             mode="bilinear",
-            align_corners=False,
+            align_corners=True,
         ).squeeze(0)
     else:
         inv = inv_crop
@@ -152,7 +152,7 @@ def _invert_cropping_landscape(res_chw, pre_h, pre_w, tgt_h, tgt_w, do_resize, i
             undo_vert.unsqueeze(0),
             size=(pre_h, pre_w),
             mode="bilinear",
-            align_corners=False,
+            align_corners=True,
         ).squeeze(0)
     else:
         inv = undo_vert
@@ -217,7 +217,7 @@ def img_save_and_viz(orig_image, proc_image, result, output_path, output_imgmatc
     proc_npy_path = (
         output_path.replace(".jpg", ".npy").replace(".jpeg", ".npy").replace(".png", ".npy")
     )
-    normal_result = F.interpolate(result.unsqueeze(0), size=proc_image.shape[:2], mode="bilinear", align_corners=False).squeeze(0)
+    normal_result = F.interpolate(result.unsqueeze(0), size=proc_image.shape[:2], mode="bilinear", align_corners=True).squeeze(0)
     normal_proc = normal_result.detach().cpu().numpy().transpose(1, 2, 0)
     normal_proc_norm = np.linalg.norm(normal_proc, axis=-1, keepdims=True)
     normal_proc = normal_proc / (normal_proc_norm + 1e-5)
