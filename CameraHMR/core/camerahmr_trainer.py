@@ -32,6 +32,9 @@ from .constants import (
     REGRESSOR_H36M, VITPOSE_BACKBONE, SMPL_MODEL_DIR
 )
 from .losses import SMPLNormalLoss
+# visualize images and normals
+import cv2
+# from ..tools.vis import denorm_and_save_img
 
 log = get_pylogger(__name__)
 
@@ -133,6 +136,14 @@ class CameraHMR(pl.LightningModule):
             conditioning_feats = rgb_feats + normal_feats
         else:
             conditioning_feats = rgb_feats
+        
+        # denormalize x and normal_input
+        norm_in = 255*(normal_input[0].detach().cpu().numpy()*0.5+0.5)
+
+        cv2.imwrite('normal_input.png', norm_in.transpose(1, 2, 0))
+        # cv2.imwrite('rgb_feats.png', rgb_feats.detach().cpu().numpy().transpose(1, 2, 0))
+        # cv2.imwrite('normal_feats.png', normal_feats.detach().cpu().numpy().transpose(1, 2, 0))
+        # cv2.imwrite('conditioning_feats.png', conditioning_feats.detach().cpu().numpy().transpose(1, 2, 0))
 
         cx, cy = batch['box_center'][:, 0], batch['box_center'][:, 1]
 

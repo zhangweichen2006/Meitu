@@ -57,20 +57,6 @@ def inference_model(model, imgs, dtype=torch.bfloat16):
 def fake_pad_images_to_batchsize(imgs):
     return F.pad(imgs, (0, 0, 0, 0, 0, 0, 0, BATCH_SIZE - imgs.shape[0]), value=0)
 
-def _invert_zoom(res_chw, target_h, target_w):
-    half_h, half_w = target_h // 2, target_w // 2
-    down = F.interpolate(
-        res_chw.unsqueeze(0),
-        size=(half_h, half_w),
-        mode="bilinear",
-        align_corners=True,
-    ).squeeze(0)
-    canvas = torch.zeros_like(res_chw)
-    y0 = (target_h - half_h) // 2
-    x0 = (target_w - half_w) // 2
-    canvas[:, y0:y0 + half_h, x0:x0 + half_w] = down
-    return canvas
-
 def _center_embed_or_crop(res_chw, out_h, out_w):
     c, h, w = res_chw.shape
     if out_h == h and out_w == w:
@@ -103,60 +89,6 @@ def _center_embed_or_crop(res_chw, out_h, out_w):
             right = left + out_w
             return res_chw[:, top:bottom, left:right]
 
-def _invert_cropping_portrait(res_chw, pre_h, pre_w, tgt_h, tgt_w, do_resize):
-    hr = tgt_h / pre_h
-    wr = tgt_w / pre_w
-    resize_ratio = None
-    if hr > (4.0 / 3.0) or wr > (4.0 / 3.0):
-        resize_ratio = min(hr, wr)
-    elif hr < 0.75 or wr < 0.75:
-        resize_ratio = max(hr, wr)
-    elif do_resize:
-        resize_ratio = min(hr, wr)
-
-    if resize_ratio is not None:
-        new_h = int(pre_h * resize_ratio)
-        new_w = int(pre_w * resize_ratio)
-    else:
-        new_h = pre_h
-        new_w = pre_w
-
-    inv_crop = _center_embed_or_crop(res_chw, new_h, new_w)
-    if resize_ratio is not None and (new_h != pre_h or new_w != pre_w):
-        inv = F.interpolate(
-            inv_crop.unsqueeze(0),
-            size=(pre_h, pre_w),
-            mode="bilinear",
-            align_corners=True,
-        ).squeeze(0)
-    else:
-        inv = inv_crop
-    return inv
-
-def _invert_cropping_landscape(res_chw, pre_h, pre_w, tgt_h, tgt_w, do_resize, is_zoom):
-    wr = tgt_w / pre_w
-    resized = False
-    if do_resize or (wr > (4.0 / 3.0)) or ((wr < 0.75) and (not is_zoom)):
-        new_w = tgt_w
-        new_h = int(pre_h * wr)
-        resized = True
-    else:
-        new_w = pre_w
-        new_h = pre_h
-
-    undo_width = _center_embed_or_crop(res_chw, tgt_h, new_w)
-    undo_vert = _center_embed_or_crop(undo_width, new_h, new_w)
-
-    if resized and (new_h != pre_h or new_w != pre_w):
-        inv = F.interpolate(
-            undo_vert.unsqueeze(0),
-            size=(pre_h, pre_w),
-            mode="bilinear",
-            align_corners=True,
-        ).squeeze(0)
-    else:
-        inv = undo_vert
-    return inv
 def revert_npy_and_img(orig_image, proc_npy_path, output_imgmatch_path, seg_dir=None, swapHW=False, mode="resize"):
     """Invert processed-space normals back to original image resolution and save.
 
