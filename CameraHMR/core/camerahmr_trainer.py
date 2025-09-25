@@ -127,6 +127,17 @@ class CameraHMR(pl.LightningModule):
         )
         return optimizer
 
+    def load_pretrained(self, ckpt_path: str, strict: bool = False):
+        sd = torch.load(ckpt_path, map_location="cpu")
+        sd = sd.get("state_dict", sd)
+        # keep only matching submodules
+        keep = {}
+        for k, v in sd.items():
+            nk = k
+            if nk.startswith("backbone.") or nk.startswith("smpl_head.") or nk.startswith("cam_model."):
+                keep[nk] = v
+        missing, unexpected = self.load_state_dict(keep, strict=strict)
+        log.info(f"Loaded pretrained: missing={len(missing)} unexpected={len(unexpected)}")
 
     def forward_step(self, batch: Dict, train: bool = False) -> Dict:
         # Use RGB image as input

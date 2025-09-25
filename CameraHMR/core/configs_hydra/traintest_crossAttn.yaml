@@ -11,7 +11,7 @@ defaults:
   - pretrained_models: default.yaml
   # experiment configs allow for version control of specific hyperparameters
   # e.g. best hyperparameters for given model and datamodule
-  - experiment: camerahmr_multi_finetune.yaml
+  - experiment: camerahmr_multi_crossAttn.yaml
   - texture_exp: null
 
 

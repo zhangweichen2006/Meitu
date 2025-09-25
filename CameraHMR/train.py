@@ -33,8 +33,7 @@ os.environ.setdefault("PROJECT_ROOT", str(PROJECT_ROOT))
 os.environ.setdefault("SAPIENS_NORMAL_CKPT", "SapiensLite/torchscript/normal/checkpoints/sapiens_2b/sapiens_2b_normal_render_people_epoch_70_torchscript.pt2")
 os.environ.setdefault("VGGT_CKPT", "../VGGT/vggt_1B_commercial.pt")
 os.environ.setdefault("PI3_CKPT", "../Pi3/model.safetensors")
-
-
+os.environ.setdefault("CAMERAHMR_CKPT", "data/pretrained-models/camerahmr_checkpoint_cleaned.ckpt")
 
 @pl.utilities.rank_zero.rank_zero_only
 def save_configs(model_cfg: CfgNode, dataset_cfg: CfgNode, rootdir: str):
