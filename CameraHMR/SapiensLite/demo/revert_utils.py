@@ -127,8 +127,9 @@ def revert_npy(
     else:
         raise ValueError(f"Unsupported array shape for revert: {proc_arr.shape}")
 
-    if proc_arr.ndim == 3 and proc_arr.shape[2] != 3:
-        proc_arr = proc_arr.permute(1, 2, 0)
+    # ensure h,w,c
+    if proc_arr.ndim == 3 and proc_arr.shape[2] not in (1, 3):
+        proc_arr = proc_arr.transpose(1, 2, 0)
     proc_h, proc_w = proc_arr.shape[:2]
 
     if mode == "zoom_to_3Dpt":

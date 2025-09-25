@@ -84,12 +84,11 @@ class DatasetTrainTest(Dataset):
 
         if 'sapiens_normals_folder' in self.data and 'normal_swapHW' in self.data and 'normal_preprocess' in self.data:
             sapiens_normals_folder, sapiens_normals_folder2 = self.data['sapiens_normals_folder']
-            replace_src, replace_tgt, replace_tgt_imgmatch = self.replace_version, self.sapiens_normal_version, self.sapiens_normal_imgmatch_version
 
             self.normal_swapHW = self.data['normal_swapHW']
             self.normal_preprocess = self.data['normal_preprocess']
-            self.sapiens_normals_path = [self.img_to_normals_path(i, replace_src, replace_tgt) for i in self.img_paths]
-            self.sapiens_normals_path_imgmatch = [self.img_to_normals_path(i, replace_src, replace_tgt_imgmatch) for i in self.img_paths]
+            self.sapiens_normals_path = [self.img_to_normals_path(i, self.replace_version, self.sapiens_normal_version) for i in self.img_paths]
+            self.sapiens_normals_path_imgmatch = [self.img_to_normals_path(i, self.replace_version, self.sapiens_normal_imgmatch_version) for i in self.img_paths]
             if self.check_file_completeness_and_filter:
                 valid_paths_sapiens_normals_imgmatch = np.array([os.path.isfile(p) for p in self.sapiens_normals_path_imgmatch])
                 if not valid_paths_sapiens_normals_imgmatch.all():
@@ -106,6 +105,8 @@ class DatasetTrainTest(Dataset):
             # check folder
             self.normal_preprocess = NORMAL_PREPROCESS[self.version][self.dataset]['preprocess']
             self.normal_swapHW = NORMAL_PREPROCESS[self.version][self.dataset]['swapHW']
+            self.sapiens_normals_path = [self.img_to_normals_path(i, self.replace_version, self.sapiens_normal_version) for i in self.img_paths]
+            self.sapiens_normals_path_imgmatch = [self.img_to_normals_path(i, self.replace_version, self.sapiens_normal_imgmatch_version) for i in self.img_paths]
 
             sapiens_normals_folder = self.img_dir.replace(self.replace_version, self.sapiens_normal_version) if self.is_train else self.img_dir.replace(self.replace_version, self.sapiens_normal_version)
             sapiens_normals_folder2 = self.img_dir.replace(self.replace_version, self.sapiens_normal_version2) if self.is_train else self.img_dir.replace(self.replace_version, self.sapiens_normal_version2)
@@ -119,7 +120,7 @@ class DatasetTrainTest(Dataset):
                 self.infer_batch_size = cfg.pretrained_models.sapiens.get('infer_batch_size', 4)
                 # sapiens_normal_model = SapiensNormalWrapper() # SLOW...
                 # TODO: port script
-                raise NotImplementedError('Sapiens normal model is not implemented')
+                self.regen_sapiens_normals(self.img_paths, self.sapiens_normals_path, self.sapiens_normals_path_imgmatch)
 
             # Helper to map an image path to the best available normals file path
             def _map_to_normals_path(img_path, replace_src, replace_tgt, replace_tgt2):
@@ -320,10 +321,12 @@ class DatasetTrainTest(Dataset):
         ):
             result = inference_model(exp_model, batch_imgs, dtype=torch.float32)
             if batch_out_name:
-                np.save(batch_out_name, result[0])
+                os.makedirs(os.path.dirname(batch_out_name[0]), exist_ok=True)
+                np.save(batch_out_name[0], result[0])
             if batch_idx == 0:
                 normal_result = revert_npy(result[0], batch_orig_imgs[0], swapHW=self.normal_swapHW, mode=self.normal_preprocess)
-                np.save(batch_out_imgmatch_name, normal_result)
+                os.makedirs(os.path.dirname(batch_out_imgmatch_name[0]), exist_ok=True)
+                np.save(batch_out_imgmatch_name[0], normal_result)
 
 
     def __getitem__(self, index):
