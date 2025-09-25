@@ -658,8 +658,13 @@ def get_example(img_path: str|np.ndarray, center_x: float, center_y: float,
     # before processing, apply the revert_npy function from processed npy to normal
     if isinstance(normal_path, (str, np.ndarray)) and normal_path is not None:
         if isinstance(normal_path, str) and len(normal_path) > 0 and os.path.isfile(normal_path):
-            normal_img = revert_npy(normal_path, cvimg_ori, swapHW=bool(normal_swapHW), mode=str(normal_preprocess))
+            if "imgmatch" in normal_path:
+                normal_img = np.load(normal_path, allow_pickle=True)
+            else:
+                normal_img = revert_npy(normal_path, cvimg_ori, swapHW=bool(normal_swapHW), mode=str(normal_preprocess))
         elif isinstance(normal_path, np.ndarray):
+            normal_img = normal_path
+        else:
             normal_img = normal_path
     else:
         normal_img = None
@@ -759,6 +764,8 @@ def get_example(img_path: str|np.ndarray, center_x: float, center_y: float,
             normal_patch_cv[:, :, 1] = s*nx + c*ny
         # Convert to CHW float32 without color normalization
         normal_patch = convert_cvimg_to_tensor(normal_patch_cv)
+    else:
+        normal_patch = None
     # cv2 visualize normal patch
     # cv2.imwrite('cvimg.png', cvimg)
     # cv2.imwrite('normal_patch2.png', (normal_img*0.5+0.5)*255)

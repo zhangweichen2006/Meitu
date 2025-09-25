@@ -12,11 +12,11 @@
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "env": {
-                "CUDA_VISIBLE_DEVICES": "7",
+                "CUDA_VISIBLE_DEVICES": "0",
                 "PYOPENGL_PLATFORM": "egl",
                 "PYTHONPATH": "${workspaceFolder}"
             },
-            "args": ["data=traintest", "experiment=camerahmr_multi", "exp_name=train_run4", "trainer.accelerator=gpu", "trainer.devices=1", "+DATASETS.check_file_completeness_and_filter=True",
+            "args": ["data=traintest_local", "experiment=camerahmr_multi_crossAttn", "exp_name=train_run4", "trainer.accelerator=gpu", "trainer.devices=1", "+DATASETS.check_file_completeness_and_filter=True",
             "+trainer.check_val_every_n_epoch=None"]
         }
     ]

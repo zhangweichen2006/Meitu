@@ -14,8 +14,11 @@ GENERAL:
 
 TRAIN:
   LR: 1e-5
+  HEAD_LR: 1e-5
+  BACKBONE_LR: 1e-7
+  NORMAL_BACKBONE_LR: 1e-7
   WEIGHT_DECAY: 1e-4
-  BATCH_SIZE: 4
+  BATCH_SIZE: 8
   LOSS_REDUCTION: mean
   NUM_TRAIN_SAMPLES: 2
   NUM_TEST_SAMPLES: 32
@@ -39,8 +42,12 @@ MODEL:
       emb_dropout: 0.0
       norm: layer
       context_dim: 1280 # from vitpose-H
-  FINETUNE: True
-  NORMAL_FINETUNE: False
+
+  FINETUNE: true # load pretrained camerahmr weights
+
+  FREEZE_BACKBONE: true
+  FREEZE_NORMAL_BACKBONE: false
+
   NORMAL_INJECTER:
     TYPE: cross_attn
     OUT_CHANNELS: 128

@@ -380,6 +380,8 @@ class DatasetTrainTest(Dataset):
         img_patch_rgba = None
         img_patch_cv = None
 
+        # use SAPIENS_TRAINING_IMGMATCH_NORMAL_VERSION sapiens_normals_path_imgmatch 
+
         img_patch_rgba, \
         img_patch_cv,\
         keypoints_2d, \
@@ -394,7 +396,7 @@ class DatasetTrainTest(Dataset):
                                       use_skimage_antialias=self.use_skimage_antialias,
                                       border_mode=self.border_mode,
                                       dataset=self.dataset,
-                                      normal_path=(self.sapiens_normals_path[index] if hasattr(self, 'sapiens_normals_path') and len(self.sapiens_normals_path) > 0 else None),
+                                      normal_path=(self.sapiens_normals_path_imgmatch[index] if hasattr(self, 'sapiens_normals_path') and len(self.sapiens_normals_path_imgmatch) > 0 else None),
                                       normal_swapHW=self.normal_swapHW,
                                       normal_preprocess=self.normal_preprocess
                                       )

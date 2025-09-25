@@ -19,6 +19,7 @@ from .losses import (
 from .cam_model.fl_net import FLNet
 from .smpl_wrapper import SMPL2 as SMPL, SMPLLayer
 from .heads.smpl_head_cliff import build_smpl_head
+from .components import CrossAttentionNormalInjecter
 from .utils.train_utils import (
     trans_points2d_parallel, load_valid, perspective_projection,
     convert_to_full_img_cam
@@ -36,6 +37,7 @@ from .losses import SMPLNormalLoss
 from .utils.smpl_utils import compute_normals_torch
 # visualize images and normals
 import cv2
+from typing import List
 # try:
 #     from tools.vis import denorm_and_save_img, save_smpl
 # except ImportError:
@@ -67,6 +69,30 @@ class CameraHMR(pl.LightningModule):
         # Normal backbone feature extractor (for normal modality)
         self.normal_backbone = create_backbone()
         self.normal_backbone.load_state_dict(torch.load(VITPOSE_BACKBONE, map_location='cpu', weights_only=True)['state_dict'])
+
+        # Optional cross-attention normal injecter
+        self.normal_injecter = None
+        ni_cfg = getattr(self.cfg.MODEL, 'NORMAL_INJECTER', None)
+        if isinstance(ni_cfg, (dict, CfgNode)):
+            ni_type = ni_cfg.get('TYPE', 'cross_attn') if isinstance(ni_cfg, dict) else ni_cfg.TYPE
+            if ni_type == 'cross_attn':
+                out_channels = ni_cfg.get('OUT_CHANNELS', 1280) if isinstance(ni_cfg, dict) else getattr(ni_cfg, 'OUT_CHANNELS', 1280)
+                num_heads = ni_cfg.get('NUM_HEADS', 8) if isinstance(ni_cfg, dict) else getattr(ni_cfg, 'NUM_HEADS', 8)
+                dropout = ni_cfg.get('DROPOUT', 0.0) if isinstance(ni_cfg, dict) else getattr(ni_cfg, 'DROPOUT', 0.0)
+                # ViT returns (B, C=1280, H/16, W/16) by default
+                self.normal_injecter = CrossAttentionNormalInjecter(in_channels=1280, out_channels=out_channels, num_heads=num_heads, dropout=dropout)
+
+        # Optional: freeze backbones from training via config
+        self.freeze_backbone = getattr(self.cfg.MODEL, 'FREEZE_BACKBONE', False)
+        self.freeze_normal_backbone = getattr(self.cfg.MODEL, 'FREEZE_NORMAL_BACKBONE', False)
+        if self.freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
+            self.backbone.eval()
+        if self.freeze_normal_backbone:
+            for param in self.normal_backbone.parameters():
+                param.requires_grad = False
+            self.normal_backbone.eval()
 
         # Camera model
         self.cam_model = FLNet()
@@ -110,34 +136,65 @@ class CameraHMR(pl.LightningModule):
         # Store validation outputs
         self.validation_step_output = []
 
+        # Optionally load pretrained CameraHMR weights
+        if cfg.MODEL.FINETUNE:
+            ckpt_path = getattr(cfg.paths, 'camerahmr_ckpt', None)
+            if ckpt_path:
+                self.load_pretrained(ckpt_path, subset_modules=['smpl_head'], strict=False)
+
+    def load_pretrained(self, ckpt_path: str, subset_modules: List[str] = None, strict: bool = False):
+        try:
+            state = torch.load(ckpt_path, map_location='cpu')
+            sd = state.get('state_dict', state)
+            keep = {}
+            for k, v in sd.items():
+                if subset_modules is None:
+                    allow = k.startswith("backbone.") or k.startswith("smpl_head.") or k.startswith("cam_model.")
+                else:
+                    allow = any(k.startswith(module) for module in subset_modules)
+                if allow:
+                    keep[k] = v
+            missing, unexpected = self.load_state_dict(keep, strict=strict)
+            log.info(f"Loaded pretrained from {ckpt_path}: missing={len(missing)} unexpected={len(unexpected)}")
+        except Exception as e:
+            log.warning(f"Failed to load pretrained from {ckpt_path}: {e}")
+
     def get_parameters(self):
         """Aggregate model parameters for optimization."""
         return list(self.smpl_head.parameters()) + list(self.backbone.parameters()) + list(self.normal_backbone.parameters())
 
     def configure_optimizers(self):
-        """Configure optimizers for training."""
+        """Configure optimizers with optional per-group LR and backbone freezing."""
+        head_lr = getattr(self.cfg.TRAIN, 'HEAD_LR', self.cfg.TRAIN.LR)
+        backbone_lr = getattr(self.cfg.TRAIN, 'BACKBONE_LR', self.cfg.TRAIN.LR)
+        normal_backbone_lr = getattr(self.cfg.TRAIN, 'NORMAL_BACKBONE_LR', backbone_lr)
+
+        param_groups = []
+
+        head_params = [p for p in self.smpl_head.parameters() if p.requires_grad]
+        # Include normal_injecter (if present) with head lr by default
+        if getattr(self, 'normal_injecter', None) is not None:
+            head_params.extend([p for p in self.normal_injecter.parameters() if p.requires_grad])
+        if len(head_params) > 0:
+            param_groups.append({'params': head_params, 'lr': head_lr})
+
+        if not getattr(self, 'freeze_backbone', False):
+            bb_params = [p for p in self.backbone.parameters() if p.requires_grad]
+            if len(bb_params) > 0:
+                param_groups.append({'params': bb_params, 'lr': backbone_lr})
+
+        if not getattr(self, 'freeze_normal_backbone', False):
+            nbb_params = [p for p in self.normal_backbone.parameters() if p.requires_grad]
+            if len(nbb_params) > 0:
+                param_groups.append({'params': nbb_params, 'lr': normal_backbone_lr})
+
         optimizer = torch.optim.AdamW(
-            params=[
-                {
-                    'params': filter(lambda p: p.requires_grad, self.get_parameters()),
-                    'lr': self.cfg.TRAIN.LR
-                }
-            ],
+            params=param_groups,
             weight_decay=self.cfg.TRAIN.WEIGHT_DECAY
         )
         return optimizer
 
-    def load_pretrained(self, ckpt_path: str, strict: bool = False):
-        sd = torch.load(ckpt_path, map_location="cpu")
-        sd = sd.get("state_dict", sd)
-        # keep only matching submodules
-        keep = {}
-        for k, v in sd.items():
-            nk = k
-            if nk.startswith("backbone.") or nk.startswith("smpl_head.") or nk.startswith("cam_model."):
-                keep[nk] = v
-        missing, unexpected = self.load_state_dict(keep, strict=strict)
-        log.info(f"Loaded pretrained: missing={len(missing)} unexpected={len(unexpected)}")
+
 
     def forward_step(self, batch: Dict, train: bool = False) -> Dict:
         # Use RGB image as input
@@ -152,8 +209,11 @@ class CameraHMR(pl.LightningModule):
         if ('normal' in batch) and isinstance(batch['normal'], torch.Tensor):
             normal_input = batch['normal']
             normal_feats = self.normal_backbone(normal_input[:,:,:,32:-32])
-            # Fuse by element-wise sum to keep channel dimension unchanged
-            conditioning_feats = rgb_feats + normal_feats
+            if self.normal_injecter is not None:
+                conditioning_feats = self.normal_injecter(rgb_feats, normal_feats)
+            else:
+                # Fallback: element-wise sum
+                conditioning_feats = rgb_feats + normal_feats
         else:
             conditioning_feats = rgb_feats
 
