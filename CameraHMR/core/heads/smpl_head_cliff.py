@@ -62,11 +62,16 @@ class SMPLTransformerDecoderHead(nn.Module):
         # Pass through transformer
         token_out = self.transformer(token, context=x)
         token_out = token_out.squeeze(1) # (B, C)
-        # Readout from token_out
-        pred_body_pose = self.decpose(token_out) + pred_body_pose # 1* 144 (6D*24)
-        pred_betas = self.decshape(token_out) + pred_betas
-        pred_cam = self.deccam(token_out) + pred_cam
-        pred_kp = self.deckp(token_out)
+        # Decoder raw residuals
+        resid_body_pose6d = self.decpose(token_out)
+        resid_betas = self.decshape(token_out)
+        resid_cam = self.deccam(token_out)
+        resid_kp = self.deckp(token_out)
+        # Readout from token_out (absolute, anchored at init means)
+        pred_body_pose = resid_body_pose6d + pred_body_pose # 1* 144 (6D*24)
+        pred_betas = resid_betas + pred_betas
+        pred_cam = resid_cam + pred_cam
+        pred_kp = resid_kp
         pred_body_pose_list.append(pred_body_pose)
         pred_betas_list.append(pred_betas)
         pred_cam_list.append(pred_cam)
@@ -78,6 +83,12 @@ class SMPLTransformerDecoderHead(nn.Module):
         pred_smpl_params_list['body_pose'] = torch.cat([joint_conversion_fn(pbp).view(batch_size, -1, 3, 3)[:, 1:, :, :] for pbp in pred_body_pose_list], dim=0) # 1*23*3*3, remove root
         pred_smpl_params_list['betas'] = torch.cat(pred_betas_list, dim=0) # 1*10
         pred_smpl_params_list['cam'] = torch.cat(pred_cam_list, dim=0) # 1*3
+        # Extra tensors for residual-based fusion
+        pred_smpl_params_list['body_pose6d'] = pred_body_pose.clone() # (B, 6*(NUM_POSE_PARAMS+1))
+        pred_smpl_params_list['body_pose6d_residual'] = resid_body_pose6d.clone()
+        pred_smpl_params_list['betas_residual'] = resid_betas.clone()
+        pred_smpl_params_list['cam_residual'] = resid_cam.clone()
+        pred_smpl_params_list['kp_residual'] = resid_kp.clone()
         pred_body_pose = joint_conversion_fn(pred_body_pose).view(batch_size, 24, 3, 3) # 1*24*3*3
 
         pred_smpl_params = {'global_orient': pred_body_pose[:, [0]], #root

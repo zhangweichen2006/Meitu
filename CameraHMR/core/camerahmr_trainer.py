@@ -19,7 +19,7 @@ from .losses import (
 from .cam_model.fl_net import FLNet
 from .smpl_wrapper import SMPL2 as SMPL, SMPLLayer
 from .heads.smpl_head_cliff import build_smpl_head
-from .components import CrossAttentionNormalInjecter
+from .components import CrossAttentionNormalInjecter, FullyConnectedNormalInjecter, AdditionNormalInjecter
 from .utils.train_utils import (
     trans_points2d_parallel, load_valid, perspective_projection,
     convert_to_full_img_cam
@@ -73,14 +73,30 @@ class CameraHMR(pl.LightningModule):
         # Optional cross-attention normal injecter
         self.normal_injecter = None
         ni_cfg = getattr(self.cfg.MODEL, 'NORMAL_INJECTER', None)
-        if isinstance(ni_cfg, (dict, CfgNode)):
-            ni_type = ni_cfg.get('TYPE', 'cross_attn') if isinstance(ni_cfg, dict) else ni_cfg.TYPE
+        if ni_cfg is not None:
+            # Support OmegaConf DictConfig / CfgNode / dict uniformly
+            def _get(key, default=None):
+                if isinstance(ni_cfg, dict):
+                    return ni_cfg.get(key, default)
+                return getattr(ni_cfg, key, default)
+
+            ni_type = _get('TYPE', 'cross_attn')
             if ni_type == 'cross_attn':
-                out_channels = ni_cfg.get('OUT_CHANNELS', 1280) if isinstance(ni_cfg, dict) else getattr(ni_cfg, 'OUT_CHANNELS', 1280)
-                num_heads = ni_cfg.get('NUM_HEADS', 8) if isinstance(ni_cfg, dict) else getattr(ni_cfg, 'NUM_HEADS', 8)
-                dropout = ni_cfg.get('DROPOUT', 0.0) if isinstance(ni_cfg, dict) else getattr(ni_cfg, 'DROPOUT', 0.0)
+                out_channels = _get('OUT_CHANNELS', 1280)
+                num_heads = _get('NUM_HEADS', 8)
+                dropout = _get('DROPOUT', 0.0)
+                alpha = _get('WEIGHT', 1.0)
                 # ViT returns (B, C=1280, H/16, W/16) by default
-                self.normal_injecter = CrossAttentionNormalInjecter(in_channels=1280, out_channels=out_channels, num_heads=num_heads, dropout=dropout)
+                self.normal_injecter = CrossAttentionNormalInjecter(in_channels=1280, out_channels=out_channels, num_heads=num_heads, dropout=dropout, alpha=alpha)
+            elif ni_type == 'fully_connected':
+                out_channels = _get('OUT_CHANNELS', 1280)
+                hidden_channels = _get('HIDDEN_CHANNELS', None)
+                dropout = _get('DROPOUT', 0.0)
+                alpha = _get('WEIGHT', 1.0)
+                self.normal_injecter = FullyConnectedNormalInjecter(in_channels=1280, out_channels=out_channels, hidden_channels=hidden_channels, dropout=dropout, alpha=alpha)
+            elif ni_type == 'addition':
+                alpha = _get('WEIGHT', 0.5)
+                self.normal_injecter = AdditionNormalInjecter(alpha=alpha)
 
         # Optional: freeze backbones from training via config
         self.freeze_backbone = getattr(self.cfg.MODEL, 'FREEZE_BACKBONE', False)
@@ -100,6 +116,31 @@ class CameraHMR(pl.LightningModule):
 
         # SMPL Head
         self.smpl_head = build_smpl_head()
+        # Optional: additional residual SMPL head (LoRA-like)
+        self.use_lora_head = bool(getattr(self.cfg.MODEL, 'ADDITIONAL_LORA_SMPL_HEAD', False))
+        self.smpl_head_lora = None
+        if self.use_lora_head:
+            # Freeze the base head
+            for p in self.smpl_head.parameters():
+                p.requires_grad = False
+            # Create a residual head copy
+            from copy import deepcopy
+            self.smpl_head_lora = deepcopy(self.smpl_head)
+            # Initialize residual head: encoder (transformer) random as usual; decoders zeroed
+            def _init_module(m):
+                if isinstance(m, torch.nn.Linear):
+                    torch.nn.init.zeros_(m.weight)
+                    if m.bias is not None:
+                        torch.nn.init.zeros_(m.bias)
+                elif isinstance(m, torch.nn.Conv2d):
+                    torch.nn.init.zeros_(m.weight)
+                    if m.bias is not None:
+                        torch.nn.init.zeros_(m.bias)
+            # Zero only decoder layers of the residual head
+            _init_module(self.smpl_head_lora.decpose)
+            _init_module(self.smpl_head_lora.decshape)
+            _init_module(self.smpl_head_lora.deccam)
+            _init_module(self.smpl_head_lora.deckp)
 
         # Loss: SMPL vertex normals (optional)
         self.smpl_normal_loss = SMPLNormalLoss()
@@ -252,7 +293,32 @@ class CameraHMR(pl.LightningModule):
         bbox_info[:, 2] = (bbox_info[:, 2] / cam_intrinsics[:, 0, 0])  # [-1, 1]
 
         bbox_info = bbox_info.cuda().float()
-        pred_smpl_params, pred_cam, _, pred_kp = self.smpl_head(conditioning_feats, bbox_info=bbox_info)
+        pred_smpl_params, pred_cam, decouts, pred_kp = self.smpl_head(conditioning_feats, bbox_info=bbox_info)
+        # Apply residual SMPL head if enabled
+        if self.use_lora_head and (self.smpl_head_lora is not None):
+            _, _, decouts_resid, pred_kp_resid = self.smpl_head_lora(conditioning_feats, bbox_info=bbox_info)
+            # Add residuals to the decoder outputs from base head
+            # Residuals are in 6D-body_pose, betas, cam, kp space before rotmat conversion
+            # Update pred_smpl_params by reconstructing from updated residuals
+            resid_body_pose6d = decouts['body_pose6d_residual'] + decouts_resid['body_pose6d_residual']
+            resid_betas = decouts['betas_residual'] + decouts_resid['betas_residual']
+            resid_cam = decouts['cam_residual'] + decouts_resid['cam_residual']
+            pred_kp = pred_kp + decouts_resid['kp_residual']
+            # Re-anchor on mean
+            batch_size = conditioning_feats.shape[0]
+            init_body_pose = self.smpl_head.init_body_pose.expand(batch_size, -1)
+            init_betas = self.smpl_head.init_betas.expand(batch_size, -1)
+            init_cam = self.smpl_head.init_cam.expand(batch_size, -1)
+            pred_body_pose6d = resid_body_pose6d + init_body_pose
+            pred_betas_vec = resid_betas + init_betas
+            pred_cam_vec = resid_cam + init_cam
+            # Convert 6D to rotmats and build SMPL params to feed the smpl layer below
+            pred_body_pose_rotmats = aa_to_rotmat(pred_body_pose6d.view(-1, 3)).view(batch_size, 24, 3, 3)
+            pred_smpl_params = {
+                'global_orient': pred_body_pose_rotmats[:, [0]],
+                'body_pose': pred_body_pose_rotmats[:, 1:],
+                'betas': pred_betas_vec
+            }
 
         # Compute model vertices, joints and the projected joints
         pred_smpl_params['global_orient'] = pred_smpl_params['global_orient'].reshape(batch_size, -1, 3, 3)

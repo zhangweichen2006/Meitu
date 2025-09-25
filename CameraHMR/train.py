@@ -84,6 +84,9 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
             num_nodes=cfg.trainer.num_nodes,
             log_every_n_steps=cfg.trainer.log_every_n_steps,
             val_check_interval=cfg.trainer.val_check_interval,
+            check_val_every_n_epoch=(cfg.trainer.check_val_every_n_epoch if hasattr(cfg.trainer, 'check_val_every_n_epoch') else 1),
+            limit_val_batches=(cfg.trainer.limit_val_batches if hasattr(cfg.trainer, 'limit_val_batches') else 1.0),
+            num_sanity_val_steps=(cfg.trainer.num_sanity_val_steps if hasattr(cfg.trainer, 'num_sanity_val_steps') else 2),
             precision=cfg.trainer.precision,
             max_steps=cfg.trainer.max_steps,
             logger=loggers,
@@ -107,7 +110,14 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
         log_hyperparameters(object_dict)
 
 
-    trainer.fit(model, datamodule=datamodule, ckpt_path='last')
+    # Respect resume flag / explicit ckpt_path. Starting fresh avoids strict missing-keys errors when architecture changed.
+    ckpt_path = None
+    if getattr(cfg, 'ckpt_path', None):
+        ckpt_path = cfg.ckpt_path
+    elif getattr(cfg.GENERAL, 'RESUME', False):
+        ckpt_path = 'last'
+
+    trainer.fit(model, datamodule=datamodule, ckpt_path=ckpt_path)
 
     log.info("Fitting done")
 
