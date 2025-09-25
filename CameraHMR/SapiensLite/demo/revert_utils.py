@@ -122,7 +122,7 @@ def revert_npy(
     if proc_arr.ndim == 2:
         channels_first = torch.from_numpy(proc_arr).unsqueeze(0).float()
     elif proc_arr.ndim == 3 and proc_arr.shape[2] in (1, 3):
-        channels_first = torch.from_numpy(proc_arr).permute(2, 0, 1).float()
+        channels_first = torch.from_numpy(proc_arr).float()
     elif proc_arr.ndim == 3 and proc_arr.shape[0] in (1, 3):
         channels_first = torch.from_numpy(proc_arr).permute(1, 2, 0).float()
     else:
@@ -138,7 +138,7 @@ def revert_npy(
         orig_image = orig_image[:, :, ::-1]
     elif type(orig_image) == np.ndarray:
         orig_image = orig_image
-        if orig_image.ndim == 3 and orig_image.shape[0] == 3:
+        if orig_image.ndim == 3 and orig_image.shape[0] in (1, 3):
             orig_image = orig_image.permute(1, 2, 0)
     else:
         raise ValueError(f"Unsupported type for revert {type(orig_image)}: {orig_image}")
