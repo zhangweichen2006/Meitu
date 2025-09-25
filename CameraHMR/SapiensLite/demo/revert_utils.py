@@ -128,7 +128,7 @@ def revert_npy(
     else:
         raise ValueError(f"Unsupported array shape for revert: {proc_arr.shape}")
 
-    proc_h, proc_w = proc_arr.shape[:2]
+    proc_h, proc_w = channels_first.shape[:2]
 
     if mode == "zoom_to_3Dpt":
         channels_first = _invert_zoom(channels_first, proc_h, proc_w)

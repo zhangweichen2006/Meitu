@@ -152,15 +152,23 @@ class DatasetTrainTest(Dataset):
                         map_normal_path = _map_to_normals_path(i, self.replace_version, self.sapiens_normal_version, self.sapiens_normal_version2)
                         if map_normal_path:
                             # revert imgmatch normal from processed normal
+                            log.info(f"Reverting imgmatch normal from {map_normal_path}")
                             rev_normal_imgmatch = revert_npy(map_normal_path, self.img_paths[idx], swapHW=self.normal_swapHW, mode=self.normal_preprocess)
+                            os.makedirs(os.path.dirname(self.sapiens_normals_path_imgmatch[idx]), exist_ok=True)
                             np.save(self.sapiens_normals_path_imgmatch[idx], rev_normal_imgmatch)
                             valid_paths_sapiens_normals.append(True)
+                            cv2.imwrite(self.sapiens_normals_path_imgmatch[idx].replace('.npy', '.png'), 255*(rev_normal_imgmatch*0.5+0.5))
+                            # os.system(f"mkdir -p {os.path.dirname(self.sapiens_normals_path2[idx])}")
+                            # os.system(f"mv {self.sapiens_normals_path[idx]} {self.sapiens_normals_path2[idx]} &")
                         else:
                             valid_paths_sapiens_normals.append(False)
                     else:
                         valid_paths_sapiens_normals.append(True)
                         # move normal path 1 (vepfs local) to normal path 2 (tos)
-                        os.system(f"cp {self.sapiens_normals_path[idx]} {self.sapiens_normals_path_imgmatch[idx]} &")
+                        log.info(f"IMGMatch normal exists. moving {self.sapiens_normals_path[idx]} to {self.sapiens_normals_path2[idx]}")
+                        os.system(f"mkdir -p {os.path.dirname(self.sapiens_normals_path2[idx])}")
+                        os.system(f"mv {self.sapiens_normals_path[idx]} {self.sapiens_normals_path2[idx]} &")
+                        os.system(f"mv {self.sapiens_normals_path[idx].replace('.npy', '.png')} {self.sapiens_normals_path2[idx].replace('.npy', '.png')} &")
                 valid_paths_sapiens_normals = np.array(valid_paths_sapiens_normals)
 
                 if not valid_paths_sapiens_normals.all():
