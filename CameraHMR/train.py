@@ -53,7 +53,8 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     save_configs(cfg, dataset_cfg, cfg.paths.output_dir)
 
     # Setup training and validation datasets
-    datamodule = DataModule(cfg, dataset_cfg)
+    preprocess_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    datamodule = DataModule(cfg, dataset_cfg, device=preprocess_device)
 
     # Setup model
     model = CameraHMR(cfg)

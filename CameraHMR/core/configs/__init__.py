@@ -53,11 +53,14 @@ DATASET_FOLDERS = {
 
 }
 
-SAPIENS_TRAINING_NORMAL_VERSION = 'training-images-sapiens-normals-DirectResize-local'
-SAPIENS_TEST_NORMAL_VERSION = 'test-images-sapiens-normals-DirectResize-local'
+SAPIENS_TRAINING_IMGMATCH_NORMAL_VERSION = 'training-images-sapiens-normals-DirectResize-imgmatch-local'
+SAPIENS_TEST_IMGMATCH_NORMAL_VERSION = 'test-images-sapiens-normals-DirectResize-imgmatch-local'
 
-SAPIENS_TRAINING_NORMAL_VERSION2 = 'training-images-sapiens-normals-DirectResize'
-SAPIENS_TEST_NORMAL_VERSION2 = 'test-images-sapiens-normals-DirectResize'
+SAPIENS_TRAINING_PROCESS_NORMAL_VERSION = 'training-images-sapiens-normals-DirectResize-local'
+SAPIENS_TEST_PROCESS_NORMAL_VERSION = 'test-images-sapiens-normals-DirectResize-local'
+
+SAPIENS_TRAINING_PROCESS_NORMAL_VERSION2 = 'training-images-sapiens-normals-DirectResize'
+SAPIENS_TEST_PROCESS_NORMAL_VERSION2 = 'test-images-sapiens-normals-DirectResize'
 
 # NEEDED FOR INVERSE NORMAL PROCESSING
 NORMAL_PREPROCESS = {

@@ -12,11 +12,12 @@ from .dataset_wai import DatasetWAI
 
 class DataModule(pl.LightningDataModule):
 
-    def __init__(self, cfg: CfgNode, dataset_cfg: CfgNode) -> None:
+    def __init__(self, cfg: CfgNode, dataset_cfg: CfgNode, device='cuda') -> None:
 
         super().__init__()
         self.cfg = cfg
         self.dataset_cfg = dataset_cfg
+        self.device = device
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
@@ -28,6 +29,7 @@ class DataModule(pl.LightningDataModule):
         else:
             kwargs['is_train'] = True
             kwargs['version'] = 'traintest'
+            kwargs['device'] = self.device
             kwargs['mean'] = self.cfg.MODEL.IMAGE_MEAN
             kwargs['std'] = self.cfg.MODEL.IMAGE_STD
             # kwargs['cropsize'] = self.cfg.MODEL.IMAGE_SIZE

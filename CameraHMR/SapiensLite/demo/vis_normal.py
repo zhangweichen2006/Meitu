@@ -17,11 +17,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision
-from adhoc_image_dataset import AdhocImageDataset
+from .adhoc_image_dataset import AdhocImageDataset
 from tqdm import tqdm
 
-from worker_pool import WorkerPool
-from revert_utils import revert_npy
+from .worker_pool import WorkerPool
+from .revert_utils import revert_npy
 
 torchvision.disable_beta_transforms_warning()
 
@@ -176,6 +176,23 @@ def load_model(checkpoint, use_torchscript=False):
     else:
         return torch.export.load(checkpoint).module()
 
+def get_preprocess_args(preprocess):
+    if preprocess == "crop_resize":
+        return True, True, False
+    elif preprocess == "crop_pad":
+        return True, False, False
+    elif preprocess == "pad_resize":
+        return False, False, False
+    elif preprocess == "zoom_to_3Dpt":
+        return True, False, True
+    elif preprocess == "resize":
+        return False, True, False
+    else:
+        return False, False, False
+
+def get_preprocess_adhoc_dataset(image_names, shape_hw, mean, std, cropping, resize, zoom_to_3Dpt, out_names, out_imgmatch_names):
+    return AdhocImageDataset(image_names, shape_hw, mean, std, cropping, resize, zoom_to_3Dpt, out_names, out_imgmatch_names)
+
 def main():
     parser = ArgumentParser()
     parser.add_argument("checkpoint", help="Checkpoint file")
@@ -282,72 +299,9 @@ def main():
 
     n_batches = (len(image_names) + args.batch_size - 1) // args.batch_size
 
-    if args.preprocess == "crop_resize":
-        inference_dataset = AdhocImageDataset(
-            image_names,
-            (input_shape[1], input_shape[2]),
-            mean=[123.5, 116.5, 103.5],
-            std=[58.5, 57.0, 57.5],
-            cropping=True,
-            resize=True,
-            zoom_to_3Dpt=False,
-            out_names=out_names,
-            out_imgmatch_names=out_imgmatch_names,
-            swapHW=args.swapHW,
-        )
-    elif args.preprocess == "crop_pad":
-        inference_dataset = AdhocImageDataset(
-            image_names,
-            (input_shape[1], input_shape[2]),
-            mean=[123.5, 116.5, 103.5],
-            std=[58.5, 57.0, 57.5],
-            cropping=True,
-            resize=False,
-            zoom_to_3Dpt=False,
-            out_names=out_names,
-            out_imgmatch_names=out_imgmatch_names,
-            swapHW=args.swapHW,
-        )
-    elif args.preprocess == "pad_resize":
-        inference_dataset = AdhocImageDataset(
-            image_names,
-            (input_shape[1], input_shape[2]),
-            mean=[123.5, 116.5, 103.5],
-            std=[58.5, 57.0, 57.5],
-            cropping=False,
-            resize=False,
-            zoom_to_3Dpt=False,
-            out_names=out_names,
-            out_imgmatch_names=out_imgmatch_names,
-            swapHW=args.swapHW,
-        )
-    elif args.preprocess == "zoom_to_3Dpt":
-        inference_dataset = AdhocImageDataset(
-            image_names,
-            (input_shape[1], input_shape[2]),
-            mean=[123.5, 116.5, 103.5],
-            std=[58.5, 57.0, 57.5],
-            cropping=True,
-            resize=False,
-            zoom_to_3Dpt=True,
-            out_names=out_names,
-            out_imgmatch_names=out_imgmatch_names,
-            swapHW=args.swapHW,
-        )
-    # resize
-    else:
-        inference_dataset = AdhocImageDataset(
-            image_names,
-            (input_shape[1], input_shape[2]),
-            mean=[123.5, 116.5, 103.5],
-            std=[58.5, 57.0, 57.5],
-            cropping=False,
-            resize=True,
-            zoom_to_3Dpt=False,
-            out_names=out_names,
-            out_imgmatch_names=out_imgmatch_names,
-            swapHW=args.swapHW,
-        )
+    cropping, resize, zoom_to_3Dpt = get_preprocess_args(args.preprocess)
+    inference_dataset = get_preprocess_adhoc_dataset(image_names, (input_shape[1], input_shape[2]), mean=[123.5, 116.5, 103.5], std=[58.5, 57.0, 57.5], cropping=cropping, resize=resize, zoom_to_3Dpt=zoom_to_3Dpt, out_names=out_names, out_imgmatch_names=out_imgmatch_names)
+
     inference_dataloader = torch.utils.data.DataLoader(
         inference_dataset,
         batch_size=args.batch_size,

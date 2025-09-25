@@ -108,14 +108,23 @@ def revert_npy(
 
     Returns an array shaped (H_orig, W_orig[, C]).
     """
-    if not os.path.exists(proc_npy_path):
-        raise FileNotFoundError(f"Processed npy not found: {proc_npy_path}")
+    if type(proc_npy_path) == torch.Tensor:
+        proc_arr = proc_npy_path.detach().cpu().numpy()
+    elif type(proc_npy_path) == np.ndarray:
+        proc_arr = proc_npy_path
+    elif type(proc_npy_path) == str:
 
-    proc_arr = np.load(proc_npy_path)
+        if not os.path.exists(proc_npy_path):
+            raise FileNotFoundError(f"Processed npy not found: {proc_npy_path}")
+        proc_arr = np.load(proc_npy_path)
+    else:
+        raise ValueError(f"Unsupported type for revert {type(proc_npy_path)}: {proc_npy_path}")
     if proc_arr.ndim == 2:
         channels_first = torch.from_numpy(proc_arr).unsqueeze(0).float()
     elif proc_arr.ndim == 3 and proc_arr.shape[2] in (1, 3):
         channels_first = torch.from_numpy(proc_arr).permute(2, 0, 1).float()
+    elif proc_arr.ndim == 3 and proc_arr.shape[0] in (1, 3):
+        channels_first = torch.from_numpy(proc_arr).permute(1, 2, 0).float()
     else:
         raise ValueError(f"Unsupported array shape for revert: {proc_arr.shape}")
 
@@ -124,6 +133,15 @@ def revert_npy(
     if mode == "zoom_to_3Dpt":
         channels_first = _invert_zoom(channels_first, proc_h, proc_w)
 
+    if type(orig_image) == str:
+        orig_image = cv2.imread(orig_image)
+        orig_image = orig_image[:, :, ::-1]
+    elif type(orig_image) == np.ndarray:
+        orig_image = orig_image
+        if orig_image.ndim == 3 and orig_image.shape[0] == 3:
+            orig_image = orig_image.permute(1, 2, 0)
+    else:
+        raise ValueError(f"Unsupported type for revert {type(orig_image)}: {orig_image}")
     orig_h, orig_w = orig_image.shape[:2]
     # Rotate first to final orientation to avoid large gaps with align_corners=False
     if swapHW:

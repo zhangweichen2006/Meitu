@@ -153,9 +153,7 @@ class AdhocImageDataset(torch.utils.data.Dataset):
         orig_img_dir = self.image_list[idx]
         orig_img = cv2.imread(orig_img_dir)
         img = self._preprocess(orig_img)
-        # If output names are provided, return them for saving; else return only image triplet
-        if self.out_names is not None and self.out_imgmatch_names is not None:
-            out_img_dir = self.out_names[idx]
-            out_imgmatch_dir = self.out_imgmatch_names[idx]
-            return orig_img_dir, out_img_dir, out_imgmatch_dir, orig_img, img
-        return orig_img_dir, orig_img, img
+
+        out_img_dir = self.out_names[idx] if self.out_names is not None else []
+        out_imgmatch_dir = self.out_imgmatch_names[idx] if self.out_imgmatch_names is not None else []
+        return orig_img_dir, out_img_dir, out_imgmatch_dir, orig_img, img

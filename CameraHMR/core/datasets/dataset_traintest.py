@@ -11,7 +11,7 @@ import pickle
 import numpy as np
 from torch.utils.data import Dataset
 from ..utils.pylogger import get_pylogger
-from ..configs import DATASET_FOLDERS, DATASET_FILES, SAPIENS_TRAINING_NORMAL_VERSION, SAPIENS_TEST_NORMAL_VERSION, SAPIENS_TRAINING_NORMAL_VERSION2, SAPIENS_TEST_NORMAL_VERSION2, NORMAL_PREPROCESS
+from ..configs import DATASET_FOLDERS, DATASET_FILES, SAPIENS_TRAINING_PROCESS_NORMAL_VERSION, SAPIENS_TEST_PROCESS_NORMAL_VERSION, SAPIENS_TRAINING_PROCESS_NORMAL_VERSION2, SAPIENS_TEST_PROCESS_NORMAL_VERSION2, SAPIENS_TRAINING_IMGMATCH_NORMAL_VERSION, SAPIENS_TEST_IMGMATCH_NORMAL_VERSION, NORMAL_PREPROCESS
 from .utils import expand_to_aspect_ratio, get_example, resize_image
 from torchvision.transforms import Normalize
 from ..constants import FLIP_KEYPOINT_PERMUTATION, NUM_JOINTS, NUM_BETAS, NUM_PARAMS_SMPL, NUM_PARAMS_SMPLX, SMPLX2SMPL, SMPLX_MODEL_DIR, SMPL_MODEL_DIR
@@ -19,19 +19,25 @@ from ..utils.camera_ray_utils import calc_plucker_embeds
 from ..utils.smpl_utils import compute_normals_torch
 # from tools.vis import vis_img,vis_pc
 from ..sapiens_normal_model import SapiensNormalWrapper
+from SapiensLite.demo.adhoc_image_dataset import AdhocImageDataset
+from SapiensLite.demo.vis_normal import get_preprocess_args, inference_model, load_model
+from SapiensLite.demo.revert_utils import revert_npy
 import ast
+from tqdm import tqdm
+import torch.nn.functional as F
 
 log = get_pylogger(__name__)
 
 
 class DatasetTrainTest(Dataset):
-    def __init__(self, cfg, dataset, version='traintest', is_train=False, mean=None, std=None, cropsize=None):
+    def __init__(self, cfg, dataset, version='traintest', is_train=False, mean=None, std=None, cropsize=None, device='cuda'):
         super(DatasetTrainTest, self).__init__()
 
         self.dataset = dataset
         self.version = version
         self.cfg = cfg
         self.is_train = is_train
+        self.device = device
         self.check_file_completeness_and_filter = cfg.DATASETS.get('check_file_completeness_and_filter', False)
 
         self.IMG_SIZE = cfg.MODEL.IMAGE_SIZE
@@ -59,8 +65,9 @@ class DatasetTrainTest(Dataset):
 
         self.img_paths = [os.path.join(self.img_dir, str(p)) for p in self.imgname]
 
-        self.sapiens_normal_version = SAPIENS_TRAINING_NORMAL_VERSION if "training-images" in self.img_dir else SAPIENS_TEST_NORMAL_VERSION
-        self.sapiens_normal_version2 = SAPIENS_TRAINING_NORMAL_VERSION2 if "training-images" in self.img_dir else SAPIENS_TEST_NORMAL_VERSION2
+        self.sapiens_normal_version = SAPIENS_TRAINING_PROCESS_NORMAL_VERSION if "training-images" in self.img_dir else SAPIENS_TEST_PROCESS_NORMAL_VERSION
+        self.sapiens_normal_version2 = SAPIENS_TRAINING_PROCESS_NORMAL_VERSION2 if "training-images" in self.img_dir else SAPIENS_TEST_PROCESS_NORMAL_VERSION2
+        self.sapiens_normal_imgmatch_version = SAPIENS_TRAINING_IMGMATCH_NORMAL_VERSION if "training-images" in self.img_dir else SAPIENS_TEST_IMGMATCH_NORMAL_VERSION
         self.replace_version = "training-images" if "training-images" in self.img_dir else "test-images"
 
         if self.check_file_completeness_and_filter:
@@ -74,29 +81,27 @@ class DatasetTrainTest(Dataset):
                 self.imgname = np.array(self.imgname)[self.valid_paths].tolist()
                 self.data = {k: v[self.valid_paths] for k, v in self.data.items()}
                 self.img_paths = np.array(self.img_paths)[self.valid_paths].tolist()
-        
+
         if 'sapiens_normals_folder' in self.data and 'normal_swapHW' in self.data and 'normal_preprocess' in self.data:
             sapiens_normals_folder, sapiens_normals_folder2 = self.data['sapiens_normals_folder']
-            replace_src, replace_tgt = self.replace_version, self.sapiens_normal_version
-            def img_to_normals_path(img_path, replace_src, replace_tgt):
-                base1 = os.path.normpath(img_path.replace(replace_src, replace_tgt))
-                root1, _ = os.path.splitext(base1)
-                return root1 + '.npy'
-                
+            replace_src, replace_tgt, replace_tgt_imgmatch = self.replace_version, self.sapiens_normal_version, self.sapiens_normal_imgmatch_version
+
             self.normal_swapHW = self.data['normal_swapHW']
             self.normal_preprocess = self.data['normal_preprocess']
-            self.sapiens_normals_path = [img_to_normals_path(i, replace_src, replace_tgt) for i in self.img_paths] 
+            self.sapiens_normals_path = [self.img_to_normals_path(i, replace_src, replace_tgt) for i in self.img_paths]
+            self.sapiens_normals_path_imgmatch = [self.img_to_normals_path(i, replace_src, replace_tgt_imgmatch) for i in self.img_paths]
             if self.check_file_completeness_and_filter:
-                valid_paths_sapiens_normals = np.array([os.path.isfile(p) for p in self.sapiens_normals_path])
-                if not valid_paths_sapiens_normals.all():
-                    num_missing = int((~valid_paths_sapiens_normals).sum())
-                    log.warning(f"{self.dataset}: {num_missing} missing sapiens pixel normals. Skipping those samples.")
-                    self.sapiens_normals_path = np.array(self.sapiens_normals_path)[valid_paths_sapiens_normals]
-                    self.imgname = np.array(self.imgname)[valid_paths_sapiens_normals].tolist()
-                    self.img_paths = np.array(self.img_paths)[valid_paths_sapiens_normals].tolist()
-                    self.data = {k: v[valid_paths_sapiens_normals] if v.shape[0] == len(valid_paths_sapiens_normals) else v for k, v in self.data.items()}
-                    for k, v in self.data.items():
-                        print(k, v.shape)
+                valid_paths_sapiens_normals_imgmatch = np.array([os.path.isfile(p) for p in self.sapiens_normals_path_imgmatch])
+                if not valid_paths_sapiens_normals_imgmatch.all():
+                    num_missing = int((~valid_paths_sapiens_normals_imgmatch).sum())
+                    log.warning(f"{self.dataset}: {num_missing} missing sapiens pixel normals. Regenerating those samples...")
+                    num_missing = int((~valid_paths_sapiens_normals_imgmatch).sum())
+                    log.warning(f"{self.dataset}: {num_missing} missing sapiens pixel normals. Regenerating those samples...")
+                    # use normal path 1 only and if normal not exist in both folders, regenerate the normal, if failed, just skip computing normal loss.
+                    sapiens_normals_path_to_regenerate = []
+                    sapiens_normals_path_to_regenerate_imgmatch = np.array(self.sapiens_normals_path_imgmatch)[~valid_paths_sapiens_normals_imgmatch].tolist()
+                    imgname_to_regenerate = np.array(self.img_paths)[~valid_paths_sapiens_normals_imgmatch].tolist()
+                    self.regen_sapiens_normals(imgname_to_regenerate, sapiens_normals_path_to_regenerate, sapiens_normals_path_to_regenerate_imgmatch)
         else:
             # check folder
             self.normal_preprocess = NORMAL_PREPROCESS[self.version][self.dataset]['preprocess']
@@ -129,35 +134,45 @@ class DatasetTrainTest(Dataset):
                 root2, _ = os.path.splitext(base2)
                 cand2_npy = root2 + '.npy'
                 if os.path.isfile(cand2_npy):
-                    print(f"copying {cand2_npy} to {cand1_npy} to use later...")
-                    os.system(f"cp {cand2_npy} {cand1_npy} &")
+                    # print(f"copying {cand2_npy} to {cand1_npy} to use later...")
+                    # os.system(f"cp {cand2_npy} {cand1_npy} &")
                     return cand2_npy
                 # Default to first candidate with .npz extension
                 return None
 
-            self.sapiens_normals_path = [os.path.splitext(i.replace(self.img_dir, sapiens_normals_folder))[0] + '.npy' for i in self.img_paths]
+            self.sapiens_normals_path = [self.img_to_normals_path(i, self.replace_version, self.sapiens_normal_version) for i in self.img_paths]
+            self.sapiens_normals_path2 = [self.img_to_normals_path(i, self.replace_version, self.sapiens_normal_version2) for i in self.img_paths]
+            self.sapiens_normals_path_imgmatch = [self.img_to_normals_path(i, self.replace_version, self.sapiens_normal_imgmatch_version) for i in self.img_paths]
 
             if self.check_file_completeness_and_filter:
-                self.sapiens_normals_path_combine = []
                 valid_paths_sapiens_normals = []
                 # use normal path 2 and copy to normal path 1
                 for idx, i in enumerate(self.img_paths):
-                    map_normal_path = _map_to_normals_path(i, self.replace_version, self.sapiens_normal_version, self.sapiens_normal_version2)
-                    if map_normal_path:
-                        self.sapiens_normals_path_combine.append(map_normal_path)
-                        valid_paths_sapiens_normals.append(True)   
+                    if not os.path.isfile(self.sapiens_normals_path_imgmatch[idx]):
+                        map_normal_path = _map_to_normals_path(i, self.replace_version, self.sapiens_normal_version, self.sapiens_normal_version2)
+                        if map_normal_path:
+                            # revert imgmatch normal from processed normal
+                            rev_normal_imgmatch = revert_npy(map_normal_path, self.img_paths[idx], swapHW=self.normal_swapHW, mode=self.normal_preprocess)
+                            np.save(self.sapiens_normals_path_imgmatch[idx], rev_normal_imgmatch)
+                            valid_paths_sapiens_normals.append(True)
+                        else:
+                            valid_paths_sapiens_normals.append(False)
                     else:
-                        valid_paths_sapiens_normals.append(False)
+                        valid_paths_sapiens_normals.append(True)
+                        # move normal path 1 (vepfs local) to normal path 2 (tos)
+                        os.system(f"cp {self.sapiens_normals_path[idx]} {self.sapiens_normals_path_imgmatch[idx]} &")
                 valid_paths_sapiens_normals = np.array(valid_paths_sapiens_normals)
+
                 if not valid_paths_sapiens_normals.all():
                     num_missing = int((~valid_paths_sapiens_normals).sum())
-                    log.warning(f"{self.dataset}: {num_missing} missing sapiens pixel normals. Skipping those samples.")
-                    self.sapiens_normals_path = self.sapiens_normals_path_combine
-                    self.imgname = np.array(self.imgname)[valid_paths_sapiens_normals].tolist()
-                    self.img_paths = np.array(self.img_paths)[valid_paths_sapiens_normals].tolist()
-                    self.data = {k: v[valid_paths_sapiens_normals] if hasattr(v, 'shape') and v.shape[0] == len(valid_paths_sapiens_normals) else v for k, v in self.data.items()}
-            else:
-                self.sapiens_normals_path = self.sapiens_normals_path
+                    log.warning(f"{self.dataset}: {num_missing} missing sapiens pixel normals. Regenerating those samples...")
+                    # use normal path 1 only and if normal not exist in both folders, regenerate the normal, if failed, just skip computing normal loss.
+                    sapiens_normals_path_to_regenerate = [] # np.array(self.sapiens_normals_path)[~valid_paths_sapiens_normals].tolist() Not necessary for now.
+                    sapiens_normals_path_to_regenerate_imgmatch = np.array(self.sapiens_normals_path_imgmatch)[~valid_paths_sapiens_normals].tolist()
+                    imgname_to_regenerate = np.array(self.img_paths)[~valid_paths_sapiens_normals].tolist()
+                    self.regen_sapiens_normals(imgname_to_regenerate, sapiens_normals_path_to_regenerate, sapiens_normals_path_to_regenerate_imgmatch)
+
+
 
             # save smpl_normals to dataset
             self.data['sapiens_normals_folder'] = (sapiens_normals_folder, sapiens_normals_folder2)
@@ -249,7 +264,7 @@ class DatasetTrainTest(Dataset):
                     betas=torch.from_numpy(self.betas[i]).float().unsqueeze(0)
                 )
                 verts = smpl_output.vertices.squeeze(0)
-                faces_t = torch.as_tensor(self.smpl_gt_neutral.faces, dtype=torch.long, device=verts.device)
+                faces_t = torch.as_tensor(self.smpl_gt_neutral.faces, dtype=torch.long, device=self.device)
                 vertex_normals = compute_normals_torch(verts, faces_t)
                 smpl_normals_arr.append(vertex_normals.detach().cpu().numpy()) # trimesh vertex_normal (area-weighted) is different from open3d and this torch computed normal (angle-weighted)
             self.smpl_normals = np.array(smpl_normals_arr)
@@ -266,6 +281,42 @@ class DatasetTrainTest(Dataset):
 
         self.length = self.scale.shape[0]
         log.info(f'Loaded {self.dataset} dataset, num samples {self.length}')
+
+    def img_to_normals_path(self, img_path, replace_src, replace_tgt):
+        base1 = os.path.normpath(img_path.replace(replace_src, replace_tgt))
+        root1, _ = os.path.splitext(base1)
+        return root1 + '.npy'
+
+    def regen_sapiens_normals(self, imgname_to_regenerate, sapiens_normals_path_to_regenerate=None, sapiens_normals_path_to_regenerate_imgmatch=None):
+        log.info(f'Regenerating sapiens normals ...')
+        cropping, resize, zoom_to_3Dpt = get_preprocess_args(self.normal_preprocess)
+        dataset = AdhocImageDataset(imgname_to_regenerate, (1024, 768), mean=[123.5, 116.5, 103.5], std=[58.5, 57.0, 57.5], cropping=cropping, resize=resize, zoom_to_3Dpt=zoom_to_3Dpt, out_names=sapiens_normals_path_to_regenerate, out_imgmatch_names=sapiens_normals_path_to_regenerate_imgmatch, swapHW=self.normal_swapHW)
+        dataloader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=1,
+            shuffle=False,
+            num_workers=1
+        )
+        SAPIENS_NORMAL_CKPT = self.cfg.paths.get('sapiens_normal_ckpt', os.environ.get('SAPIENS_NORMAL_CKPT', None))
+        USE_TORCHSCRIPT = "_torchscript" in SAPIENS_NORMAL_CKPT
+        exp_model = load_model(SAPIENS_NORMAL_CKPT, USE_TORCHSCRIPT)
+        if not USE_TORCHSCRIPT:
+            dtype = torch.bfloat16
+            exp_model.to(dtype)
+            exp_model = torch.compile(exp_model, mode="max-autotune", fullgraph=True)
+        else:
+            dtype = torch.float32  # TorchScript models use float32
+            exp_model = exp_model.to(self.device)
+        for batch_idx, (batch_image_name, batch_out_name, batch_out_imgmatch_name, batch_orig_imgs, batch_imgs) in tqdm(
+            enumerate(dataloader), total=len(dataloader)
+        ):
+            result = inference_model(exp_model, batch_imgs, dtype=torch.float32)
+            if batch_out_name:
+                np.save(batch_out_name, result[0])
+            if batch_idx == 0:
+                normal_result = revert_npy(result[0], batch_orig_imgs[0], swapHW=self.normal_swapHW, mode=self.normal_preprocess)
+                np.save(batch_out_imgmatch_name, normal_result)
+
 
     def __getitem__(self, index):
         item = {}
@@ -288,7 +339,7 @@ class DatasetTrainTest(Dataset):
 
         img_full_resized = np.transpose(img_full_resized.astype('float32'),
                         (2, 0, 1))/255.0
-                        
+
         item['img_full_resized'] = self.normalize_img(torch.from_numpy(img_full_resized).float())
         # normals are handled inside get_example via normal_path argument
         # item['normal_full_resized'] = None
@@ -401,12 +452,13 @@ class DatasetTrainTest(Dataset):
         if 'smpl_normals' in self.data:
             item['smpl_normals'] = self.smpl_normals[index]
         else:
-            item['smpl_normals'] = np.zeros((1, 6890, 3))
+            item['smpl_normals'] = []
 
         if 'sapiens_normals_path' in self.data:
-            item['sapiens_normals_path'] = self.sapiens_normals_path[index]
+            # TODO: check which normal shows best results
+            item['sapiens_normals_path'] = self.sapiens_normals_path_imgmatch[index]
         else:
-            item['sapiens_normals_path'] = np.zeros((1, 1, 1))
+            item['sapiens_normals_path'] = ''
 
         return item
 

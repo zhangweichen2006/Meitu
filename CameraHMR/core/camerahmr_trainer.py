@@ -36,7 +36,14 @@ from .losses import SMPLNormalLoss
 from .utils.smpl_utils import compute_normals_torch
 # visualize images and normals
 import cv2
-from ..tools.vis import denorm_and_save_img
+# try:
+#     from tools.vis import denorm_and_save_img, save_smpl
+# except ImportError:
+#     import os, sys
+#     repo_root = os.path.dirname(os.path.dirname(__file__))  # .../CameraHMR
+#     if repo_root not in sys.path:
+#         sys.path.insert(0, repo_root)
+#     from tools.vis import denorm_and_save_img, save_smpl
 
 log = get_pylogger(__name__)
 
