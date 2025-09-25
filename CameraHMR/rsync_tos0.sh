@@ -1,11 +1,10 @@
 set -euo pipefail
 
-FOLDER=test-images-sapiens-seg-ResizeCrop
+FOLDER=test-images-sapiens-normals-OrgPadCrop
 SUBFOLDER=*
 VEPFS_FOLDER=/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/data/${FOLDER}-local/${SUBFOLDER}
 TOS_FOLDER=/picassox/tos-mtlab-train-base/human-body/weichen.zhang/data/CameraHMR/data/$FOLDER/
 VEPFS_HYPERLINK=/picassox/vepfs-mtlab-train-base-new/human-body/weichen.zhang/CameraHMR/data/${FOLDER}
-
 # check folder exists
 echo "checking folder ${VEPFS_FOLDER}"
 if ! compgen -G "$VEPFS_FOLDER" > /dev/null; then

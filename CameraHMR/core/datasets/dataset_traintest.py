@@ -273,8 +273,8 @@ class DatasetTrainTest(Dataset):
                     np.save(sapiens_normals_path_to_regenerate_imgmatch[idx], rev_normal_imgmatch)
                     valid_paths_sapiens_normals.append(True)
                     cv2.imwrite(sapiens_normals_path_to_regenerate_imgmatch[idx].replace('.npy', '.png'), 255*(rev_normal_imgmatch*0.5+0.5))
-                    # os.system(f"mkdir -p {os.path.dirname(self.sapiens_normals_path2[idx])}")
-                    # os.system(f"mv {self.sapiens_normals_path[idx]} {self.sapiens_normals_path2[idx]} &")
+                    os.system(f"mkdir -p {os.path.dirname(self.sapiens_normals_path2[idx])}")
+                    os.system(f"mv {self.sapiens_normals_path[idx]} {self.sapiens_normals_path2[idx]} &")
                 else:
                     valid_paths_sapiens_normals.append(False)
             else:
@@ -380,7 +380,7 @@ class DatasetTrainTest(Dataset):
         img_patch_rgba = None
         img_patch_cv = None
 
-        # use SAPIENS_TRAINING_IMGMATCH_NORMAL_VERSION sapiens_normals_path_imgmatch 
+        # use SAPIENS_TRAINING_IMGMATCH_NORMAL_VERSION sapiens_normals_path_imgmatch
 
         img_patch_rgba, \
         img_patch_cv,\
