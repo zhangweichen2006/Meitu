@@ -99,7 +99,7 @@ def _invert_zoom(res_chw: torch.Tensor, target_h: int, target_w: int) -> torch.T
 
 def revert_npy(
     proc_npy_path: str|np.ndarray|torch.Tensor,
-    orig_image: str|np.ndarray,
+    orig_image: str|np.ndarray|torch.Tensor,
     *,
     swapHW: bool = False,
     mode: str = "resize",
@@ -118,12 +118,14 @@ def revert_npy(
         proc_arr = np.load(proc_npy_path)
     else:
         raise ValueError(f"Unsupported type for revert {type(proc_npy_path)}: {proc_npy_path}")
+
+    # ensure c,h,w
     if proc_arr.ndim == 2:
         channels_first = torch.from_numpy(proc_arr).unsqueeze(0).float()
     elif proc_arr.ndim == 3 and proc_arr.shape[2] in (1, 3):
         channels_first = torch.from_numpy(proc_arr).permute(2, 0, 1).float()
     elif proc_arr.ndim == 3 and proc_arr.shape[0] in (1, 3):
-        channels_first = torch.from_numpy(proc_arr).permute(1, 2, 0).float()
+        channels_first = torch.from_numpy(proc_arr).float()
     else:
         raise ValueError(f"Unsupported array shape for revert: {proc_arr.shape}")
 
@@ -135,12 +137,16 @@ def revert_npy(
     if mode == "zoom_to_3Dpt":
         channels_first = _invert_zoom(channels_first, proc_h, proc_w)
 
+    # ensure h,w,c
     if type(orig_image) == str:
         orig_image = cv2.imread(orig_image)
         orig_image = orig_image[:, :, ::-1]
     elif type(orig_image) == np.ndarray:
         orig_image = orig_image
-        if orig_image.ndim == 3 and orig_image.shape[0] == 3:
+        if orig_image.ndim == 3 and orig_image.shape[2] not in (1, 3):
+            orig_image = orig_image.transpose(1, 2, 0)
+    elif type(orig_image) == torch.Tensor:
+        if orig_image.ndim == 3 and orig_image.shape[-1] not in (1, 3):
             orig_image = orig_image.permute(1, 2, 0)
     else:
         raise ValueError(f"Unsupported type for revert {type(orig_image)}: {orig_image}")

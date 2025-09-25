@@ -323,10 +323,11 @@ class DatasetTrainTest(Dataset):
             if batch_out_name:
                 os.makedirs(os.path.dirname(batch_out_name[0]), exist_ok=True)
                 np.save(batch_out_name[0], result[0])
+            normal_result = revert_npy(result[0], batch_orig_imgs[0], swapHW=self.normal_swapHW, mode=self.normal_preprocess)
+            os.makedirs(os.path.dirname(batch_out_imgmatch_name[0]), exist_ok=True)
+            np.save(batch_out_imgmatch_name[0], normal_result)
             if batch_idx == 0:
-                normal_result = revert_npy(result[0], batch_orig_imgs[0], swapHW=self.normal_swapHW, mode=self.normal_preprocess)
-                os.makedirs(os.path.dirname(batch_out_imgmatch_name[0]), exist_ok=True)
-                np.save(batch_out_imgmatch_name[0], normal_result)
+                cv2.imwrite(batch_out_imgmatch_name[0].replace('.npy', '.png'), 255*(normal_result*0.5+0.5))
 
 
     def __getitem__(self, index):

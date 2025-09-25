@@ -154,6 +154,6 @@ class AdhocImageDataset(torch.utils.data.Dataset):
         orig_img = cv2.imread(orig_img_dir)
         img = self._preprocess(orig_img)
 
-        out_img_dir = self.out_names[idx] if self.out_names is not None else []
-        out_imgmatch_dir = self.out_imgmatch_names[idx] if self.out_imgmatch_names is not None else []
+        out_img_dir = self.out_names[idx] if self.out_names else []
+        out_imgmatch_dir = self.out_imgmatch_names[idx] if self.out_imgmatch_names else []
         return orig_img_dir, out_img_dir, out_imgmatch_dir, orig_img, img
