@@ -29,12 +29,10 @@ class SMPLTransformerDecoderHead(nn.Module):
             **transformer_args
         )
         dim=transformer_args['dim']
-
-        # shared transformer but different fc decoders
-        self.decpose = nn.ModuleList([nn.Linear(dim, npose) for _ in range(3)])
-        self.decshape = nn.ModuleList([nn.Linear(dim, 10) for _ in range(3)])
-        self.deccam = nn.ModuleList([nn.Linear(dim, 3) for _ in range(3)])
-        self.deckp = nn.ModuleList([nn.Linear(dim, 88) for _ in range(3)])  
+        self.decpose = nn.Linear(dim, npose)
+        self.decshape = nn.Linear(dim, 10)
+        self.deccam = nn.Linear(dim, 3)
+        self.deckp = nn.Linear(dim, 88)
 
         mean_params = np.load(SMPL_MEAN_PARAMS_FILE)
         init_body_pose = torch.from_numpy(mean_params['pose'].astype(np.float32)).unsqueeze(0)
@@ -56,59 +54,33 @@ class SMPLTransformerDecoderHead(nn.Module):
         pred_body_pose = init_body_pose
         pred_betas = init_betas
         pred_cam = init_cam
-
-        gendered_pred_smpl_params_list = []
+        pred_body_pose_list = []
+        pred_betas_list = []
+        pred_cam_list = []
         token = torch.cat([bbox_info, pred_body_pose, pred_betas, pred_cam], dim=1)[:,None,:]
 
         # Pass through transformer
         token_out = self.transformer(token, context=x)
         token_out = token_out.squeeze(1) # (B, C)
+        # Readout from token_out
+        pred_body_pose = self.decpose(token_out) + pred_body_pose # 1* 144 (6D*24)
+        pred_betas = self.decshape(token_out) + pred_betas
+        pred_cam = self.deccam(token_out) + pred_cam
+        pred_kp = self.deckp(token_out)
+        pred_body_pose_list.append(pred_body_pose)
+        pred_betas_list.append(pred_betas)
+        pred_cam_list.append(pred_cam)
 
-        for i in range(3):
+        joint_conversion_fn = rot6d_to_rotmat
 
-            pred_body_pose_list = []
-            pred_betas_list = []
-            pred_cam_list = []
-            resid_body_pose6d_list = []
-            resid_betas_list = []
-            resid_cam_list = []
-            resid_kp_list = []
-            # Decoder raw residuals
-            
-            resid_body_pose6d = self.decpose[i](token_out)
-            resid_betas = self.decshape[i](token_out)
-            resid_cam = self.deccam[i](token_out)
-            resid_kp = self.deckp[i](token_out)
+        pred_smpl_params_list = {}
 
-            # Readout from token_out (absolute, anchored at init means)
-            pred_body_pose = resid_body_pose6d + pred_body_pose.clone() # 1* 144 (6D*24)
-            pred_betas = resid_betas + pred_betas.clone()
-            pred_cam = resid_cam + pred_cam.clone()
-            pred_kp = resid_kp
-            pred_body_pose_list.append(pred_body_pose)
-            pred_betas_list.append(pred_betas)
-            pred_cam_list.append(pred_cam)
+        pred_smpl_params_list['body_pose'] = torch.cat([joint_conversion_fn(pbp).view(batch_size, -1, 3, 3)[:, 1:, :, :] for pbp in pred_body_pose_list], dim=0) # 1*23*3*3, remove root
+        pred_smpl_params_list['betas'] = torch.cat(pred_betas_list, dim=0) # 1*10
+        pred_smpl_params_list['cam'] = torch.cat(pred_cam_list, dim=0) # 1*3
+        pred_body_pose = joint_conversion_fn(pred_body_pose).view(batch_size, 24, 3, 3) # 1*24*3*3
 
-            joint_conversion_fn = rot6d_to_rotmat
-
-            pred_smpl_params_list = {}
-            pred_smpl_params_list['body_pose'] = torch.cat([joint_conversion_fn(pbp).view(batch_size, -1, 3, 3)[:, 1:, :, :] for pbp in pred_body_pose_list], dim=0) # 1*23*3*3, remove root
-            pred_smpl_params_list['betas'] = torch.cat(pred_betas_list, dim=0) # 1*10
-            pred_smpl_params_list['cam'] = torch.cat(pred_cam_list, dim=0) # 1*3
-            # Extra tensors for residual-based fusion
-            pred_smpl_params_list['body_pose6d'] = pred_body_pose.clone() # (B, 6*(NUM_POSE_PARAMS+1))
-            pred_smpl_params_list['body_pose6d_residual'] = resid_body_pose6d.clone()
-            pred_smpl_params_list['body_pose6d_residual'] = resid_body_pose6d.clone()
-            pred_smpl_params_list['betas_residual'] = resid_betas.clone()
-            pred_smpl_params_list['cam_residual'] = resid_cam.clone()
-            pred_smpl_params_list['kp_residual'] = resid_kp.clone()
-            pred_body_pose = joint_conversion_fn(pred_body_pose).view(batch_size, 24, 3, 3) # 1*24*3*3
-
-            pred_smpl_params = {'global_orient': pred_body_pose[:, [0]], #root
-                                'body_pose': pred_body_pose[:, 1:], # 23 joints
-                                'betas': pred_betas}
-
-            gendered_ret = pred_smpl_params, pred_cam, pred_smpl_params_list, pred_kp
-            gendered_pred_smpl_params_list.append(gendered_ret)
-
-        return gendered_pred_smpl_params_list
+        pred_smpl_params = {'global_orient': pred_body_pose[:, [0]], #root
+                            'body_pose': pred_body_pose[:, 1:], # 23 joints
+                            'betas': pred_betas}
+        return pred_smpl_params, pred_cam, pred_smpl_params_list, pred_kp

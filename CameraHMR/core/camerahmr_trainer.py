@@ -31,7 +31,7 @@ from .utils.pylogger import get_pylogger
 from .utils.renderer_cam import render_image_group
 from .constants import (
     NUM_JOINTS, H36M_TO_J14, CAM_MODEL_CKPT, DOWNSAMPLE_MAT,
-    REGRESSOR_H36M, VITPOSE_BACKBONE, SMPL_MODEL_DIR, SMPLX2SMPL, SMPLX_MODEL_DIR
+    REGRESSOR_H36M, VITPOSE_BACKBONE, SMPL_MODEL_DIR, SMPLX2SMPL, SMPLX_MODEL_DIR, NUM_POSE_PARAMS, NUM_BETAS
 )
 from .losses import SMPLNormalLoss
 # normals util
@@ -139,7 +139,7 @@ class CameraHMR(pl.LightningModule):
 
             # Create a residual head copy
             from copy import deepcopy
-            self.suse_lora_head = deepcopy(self.smpl_head)
+            self.smpl_head_lora = deepcopy(self.smpl_head)
             # Initialize residual head: encoder (transformer) random as usual; decoders zeroed
             def _init_module(m):
                 if isinstance(m, torch.nn.Linear):
@@ -248,6 +248,7 @@ class CameraHMR(pl.LightningModule):
                 keep = new_keep
             missing, unexpected = self.load_state_dict(keep, strict=strict)
             log.info(f"Loaded pretrained from {ckpt_path}: missing={len(missing)} unexpected={len(unexpected)}")
+            
         except Exception as e:
             log.warning(f"Failed to load pretrained from {ckpt_path}: {e}")
 
@@ -378,47 +379,48 @@ class CameraHMR(pl.LightningModule):
             #     batch['vertices'] = batch['vertices']
             #     batch['smpl_normals'] = batch['smpl_normals']
             #     batch['keypoints_3d'] = batch['keypoints_3d']
+        if self.cfg.MODEL.SMPL_HEAD.TYPE == 'transformer_decoder_gendered':
+            gendered_pred_smpl_params_list = self.smpl_head(rgb_feats, bbox_info=bbox_info)
 
-        gendered_pred_smpl_params_list = self.smpl_head(rgb_feats, bbox_info=bbox_info)
-        if self.use_lora_head and (self.smpl_head_lora is not None):
-            gendered_pred_smpl_params_list_lora = self.smpl_head_lora(conditioning_feats, bbox_info=bbox_info)
-        
-        output_gendered = []
-        # for each gender (0: neutral, 1: male, 2: female)
-        for i in range(3):
-            pred_smpl_params, pred_cam, decouts, pred_kp = gendered_pred_smpl_params_list[i]
-            # if lora head is used
             if self.use_lora_head and (self.smpl_head_lora is not None):
-                _, _, decouts_resid, _ = gendered_pred_smpl_params_list_lora[i]
-                # Add residuals to the decoder outputs from base head
-                # Residuals are in 6D-body_pose, betas, cam, kp space before rotmat conversion
-                # Update pred_smpl_params by reconstructing from updated residuals
-                resid_body_pose6d = decouts['body_pose6d_residual'] + decouts_resid['body_pose6d_residual']
-                resid_betas = decouts['betas_residual'] + decouts_resid['betas_residual']
-                resid_cam = decouts['cam_residual'] + decouts_resid['cam_residual']
-                pred_kp = pred_kp + decouts_resid['kp_residual']
-                # Re-anchor on mean
-                batch_size = conditioning_feats.shape[0]
+                gendered_pred_smpl_params_list_lora = self.smpl_head_lora(conditioning_feats, bbox_info=bbox_info)
+            
+            output_gendered = []
+            # for each gender (0: neutral, 1: male, 2: female)
+            for i in range(3):
+                pred_smpl_params, pred_cam, decouts, pred_kp = gendered_pred_smpl_params_list[i]
+                # if lora head is used
+                if self.use_lora_head and (self.smpl_head_lora is not None):
+                    _, _, decouts_resid, _ = gendered_pred_smpl_params_list_lora[i]
+                    # Add residuals to the decoder outputs from base head
+                    # Residuals are in 6D-body_pose, betas, cam, kp space before rotmat conversion
+                    # Update pred_smpl_params by reconstructing from updated residuals
+                    resid_body_pose6d = decouts['body_pose6d_residual'] + decouts_resid['body_pose6d_residual']
+                    resid_betas = decouts['betas_residual'] + decouts_resid['betas_residual']
+                    resid_cam = decouts['cam_residual'] + decouts_resid['cam_residual']
+                    pred_kp = pred_kp + decouts_resid['kp_residual']
+                    # Re-anchor on mean
+                    batch_size = conditioning_feats.shape[0]
 
-                init_body_pose = self.smpl_head.init_body_pose.expand(batch_size, -1)
-                init_betas = self.smpl_head.init_betas.expand(batch_size, -1)
-                init_cam = self.smpl_head.init_cam.expand(batch_size, -1)
+                    init_body_pose = self.smpl_head.init_body_pose.expand(batch_size, -1)
+                    init_betas = self.smpl_head.init_betas.expand(batch_size, -1)
+                    init_cam = self.smpl_head.init_cam.expand(batch_size, -1)
 
-                pred_body_pose6d = resid_body_pose6d + init_body_pose
-                pred_betas_vec = resid_betas + init_betas
-                pred_cam = resid_cam + init_cam
-                # Convert 6D to rotmats and build SMPL params to feed the smpl layer below
-                pred_body_pose_rotmats = aa_to_rotmat(pred_body_pose6d.view(-1, 3)).view(batch_size, 24, 3, 3)
-                pred_smpl_params = {
-                    'global_orient': pred_body_pose_rotmats[:, [0]],
-                    'body_pose': pred_body_pose_rotmats[:, 1:],
-                    'betas': pred_betas_vec
-                }
+                    pred_body_pose6d = resid_body_pose6d + init_body_pose
+                    pred_betas_vec = resid_betas + init_betas
+                    pred_cam = resid_cam + init_cam
+                    # Convert 6D to rotmats and build SMPL params to feed the smpl layer below
+                    pred_body_pose_rotmats = aa_to_rotmat(pred_body_pose6d.view(-1, 3)).view(batch_size, 24, 3, 3)
+                    pred_smpl_params = {
+                        'global_orient': pred_body_pose_rotmats[:, [0]],
+                        'body_pose': pred_body_pose_rotmats[:, 1:],
+                        'betas': pred_betas_vec
+                    }
 
-            # Compute model vertices, joints and the projected joints
-            pred_smpl_params['global_orient'] = pred_smpl_params['global_orient'].reshape(batch_size, -1, 3, 3)
-            pred_smpl_params['body_pose'] = pred_smpl_params['body_pose'].reshape(batch_size, -1, 3, 3)
-            pred_smpl_params['betas'] = pred_smpl_params['betas'].reshape(batch_size, -1)
+                # Compute model vertices, joints and the projected joints
+                pred_smpl_params['global_orient'] = pred_smpl_params['global_orient'].reshape(batch_size, -1, 3, 3)
+                pred_smpl_params['body_pose'] = pred_smpl_params['body_pose'].reshape(batch_size, -1, 3, 3)
+                pred_smpl_params['betas'] = pred_smpl_params['betas'].reshape(batch_size, -1)
 
             # ADDITIONALLY USE GENDER INFO TO PREDICT THE SMPL MODELS and BETTER USE FOR SMPL GT
             smpl_output = self.gendered_smpl_layers[i](**{k: v.float() for k,v in pred_smpl_params.items()}, pose2rot=False)
@@ -478,6 +480,27 @@ class CameraHMR(pl.LightningModule):
 
             output_gendered.append(output)
 
+        else:
+            pred_smpl_params, pred_cam, decouts, pred_kp = self.smpl_head(rgb_feats, bbox_info=bbox_info)
+
+            smpl_output = self.gendered_smpl_layers[0](**{k: v.float() for k,v in pred_smpl_params.items()}, pose2rot=False)
+
+            pred_keypoints_3d = smpl_output.joints
+            pred_vertices = smpl_output.vertices
+
+            output = {}
+            output['pred_keypoints_3d'] = pred_keypoints_3d.reshape(batch_size, -1, 3)
+            output['pred_vertices'] = pred_vertices.reshape(batch_size, -1, 3)
+            output['pred_cam'] = pred_cam
+            output['pred_smpl_params'] = {k: v.clone() for k,v in pred_smpl_params.items()}
+
+            # import open3d as o3d
+            # pc = o3d.geometry.PointCloud()
+            # pc.points = o3d.utility.Vector3dVector(pred_vertices[1].detach().cpu().numpy())
+            # o3d.io.write_point_cloud(f'pred_vertices.ply', pc)
+            # pc = o3d.geometry.PointCloud()
+            # pc.points = o3d.utility.Vector3dVector(batch['vertices'][1].detach().cpu().numpy())
+            # o3d.io.write_point_cloud(f'gt_vertices.ply', pc)
         return output_gendered, fl_h
 
     def perspective_projection_vis(self, input_batch, output, max_save_img=1):
