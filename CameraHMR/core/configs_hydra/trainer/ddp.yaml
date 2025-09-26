@@ -12,3 +12,5 @@ accelerator: gpu
 devices: 3
 num_nodes: 1
 sync_batchnorm: True
+
+enable_direct_gpu_process_gt_smpl_verts_and_normals: True

@@ -34,9 +34,12 @@ class DataModule(pl.LightningDataModule):
             kwargs['std'] = self.cfg.MODEL.IMAGE_STD
             # kwargs['cropsize'] = self.cfg.MODEL.IMAGE_SIZE
             self.train_dataset = self.train_test_dataset_prepare(**kwargs)
-            kwargs['is_train'] = False
-            kwargs['version'] = 'traintest'
-            self.val_dataset = self.train_test_dataset_prepare(**kwargs)
+            if self.cfg.DATASETS.VAL_DATASETS:
+                kwargs['is_train'] = False
+                kwargs['version'] = 'traintest'
+                self.val_dataset = self.train_test_dataset_prepare(**kwargs)
+            else:
+                self.val_dataset = None
             # self.train_dataset = self.train_dataset_prepare()
             # self.val_dataset = self.val_dataset_prepare()
 
@@ -109,7 +112,7 @@ class DataModule(pl.LightningDataModule):
         # For training, return a single concatenated dataset so that DataLoader sees samples, not datasets
         if kwargs['is_train']:
             if len(dataset_list) == 0:
-                return []
+                raise ValueError("No valid training datasets found. Check DATASETS.TRAIN_DATASETS, DATASET_FOLDERS/DATASET_FILES, or disable filtering.")
             return torch.utils.data.ConcatDataset(dataset_list)
         # For validation, return list so we create one DataLoader per dataset
         return dataset_list

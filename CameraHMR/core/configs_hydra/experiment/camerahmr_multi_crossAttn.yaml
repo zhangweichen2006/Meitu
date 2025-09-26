@@ -31,7 +31,7 @@ MODEL:
   IMAGE_MEAN: [0.485, 0.456, 0.406]
   IMAGE_STD: [0.229, 0.224, 0.225]
   SMPL_HEAD:
-    TYPE: transformer_decoder
+    TYPE: transformer_decoder_gendered
     IN_CHANNELS: 2048
     TRANSFORMER_DECODER:
       depth: 6

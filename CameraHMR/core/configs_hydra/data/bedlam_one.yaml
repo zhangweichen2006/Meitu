@@ -1,0 +1,8 @@
+# @package _global_
+
+DATASETS:
+  # Use only BEDLAM subsets present in DATASET_FOLDERS / DATASET_FILES (train index 1)
+  TRAIN_DATASETS: 'static-hdri-bbox44'
+  VAL_DATASETS: static-hdri-bbox44
+
+

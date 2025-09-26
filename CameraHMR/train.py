@@ -94,6 +94,7 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
             strategy=(cfg.trainer.strategy if hasattr(cfg.trainer, 'strategy') else DDPStrategy(find_unused_parameters=True)),
             sync_batchnorm=(cfg.trainer.sync_batchnorm if hasattr(cfg.trainer, 'sync_batchnorm') else False),
         )
+    print("trainer.enable_validation", trainer.enable_validation)
     print(trainer)
 
     object_dict = {

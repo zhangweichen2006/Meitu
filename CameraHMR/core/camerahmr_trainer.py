@@ -19,6 +19,7 @@ from .losses import (
 from .cam_model.fl_net import FLNet
 from .smpl_wrapper import SMPL2 as SMPL, SMPLLayer
 from .heads.smpl_head_cliff import build_smpl_head
+from .heads.smpl_head_cliff_gendered import build_smpl_head_gendered
 from .components import CrossAttentionNormalInjecter, FullyConnectedNormalInjecter, AdditionNormalInjecter
 from .utils.train_utils import (
     trans_points2d_parallel, load_valid, perspective_projection,
@@ -30,7 +31,7 @@ from .utils.pylogger import get_pylogger
 from .utils.renderer_cam import render_image_group
 from .constants import (
     NUM_JOINTS, H36M_TO_J14, CAM_MODEL_CKPT, DOWNSAMPLE_MAT,
-    REGRESSOR_H36M, VITPOSE_BACKBONE, SMPL_MODEL_DIR
+    REGRESSOR_H36M, VITPOSE_BACKBONE, SMPL_MODEL_DIR, SMPLX2SMPL, SMPLX_MODEL_DIR
 )
 from .losses import SMPLNormalLoss
 # normals util
@@ -64,11 +65,40 @@ class CameraHMR(pl.LightningModule):
 
         # Backbone feature extractor
         self.backbone = create_backbone()
-        self.backbone.load_state_dict(torch.load(VITPOSE_BACKBONE, map_location='cpu', weights_only=True)['state_dict'])
+        if not self.cfg.MODEL.FINETUNE:
+            self.backbone.load_state_dict(torch.load(VITPOSE_BACKBONE, map_location='cpu', weights_only=True)['state_dict'])
 
+        # Camera model
+        self.cam_model = FLNet()
+
+        # SMPL Head (Neutral, Male, Female)
+        self.enable_direct_gpu_process_gt_smpl_verts_and_normals = getattr(self.cfg.trainer, 'enable_direct_gpu_process_gt_smpl_verts_and_normals', True)
+        # Optional: additional residual SMPL head (LoRA-like)
+        self.use_lora_head = bool(getattr(self.cfg.MODEL, 'ADDITIONAL_LORA_SMPL_HEAD', False))
+        if self.cfg.MODEL.SMPL_HEAD.TYPE == 'transformer_decoder_gendered':
+            self.smpl_head = build_smpl_head_gendered()
+            self.duplicate_gendered_heads = True
+        else:
+            self.smpl_head = build_smpl_head()
+            self.duplicate_gendered_heads = False
+
+        # FINETUNE MODE: 
+        if cfg.MODEL.FINETUNE:
+            # load pretrained CameraHMR weights (backbones, smpl_head)
+            ckpt_path = getattr(cfg.paths, 'camerahmr_ckpt', None)
+            if ckpt_path:
+                self.load_pretrained(ckpt_path, subset_modules=None, strict=False, duplicate_gendered_heads=self.duplicate_gendered_heads,
+                decoder_blocks = ("decpose", "decshape", "deccam", "deckp")) # Load ALL ['smpl_head']
+            else:
+                raise ValueError("No pretrained CameraHMR weights found. Check paths.camerahmr_ckpt.")
+            
+            # load cam_model weights 
+            load_valid(self.cam_model, CAM_MODEL_CKPT)
+        
         # Normal backbone feature extractor (for normal modality)
         self.normal_backbone = create_backbone()
-        self.normal_backbone.load_state_dict(torch.load(VITPOSE_BACKBONE, map_location='cpu', weights_only=True)['state_dict'])
+        if not self.cfg.MODEL.FINETUNE:
+            self.normal_backbone.load_state_dict(torch.load(VITPOSE_BACKBONE, map_location='cpu', weights_only=True)['state_dict'])
 
         # Optional cross-attention normal injecter
         self.normal_injecter = None
@@ -98,34 +128,18 @@ class CameraHMR(pl.LightningModule):
                 alpha = _get('WEIGHT', 0.5)
                 self.normal_injecter = AdditionNormalInjecter(alpha=alpha)
 
-        # Optional: freeze backbones from training via config
-        self.freeze_backbone = getattr(self.cfg.MODEL, 'FREEZE_BACKBONE', False)
-        self.freeze_normal_backbone = getattr(self.cfg.MODEL, 'FREEZE_NORMAL_BACKBONE', False)
-        if self.freeze_backbone:
-            for param in self.backbone.parameters():
-                param.requires_grad = False
-            self.backbone.eval()
-        if self.freeze_normal_backbone:
-            for param in self.normal_backbone.parameters():
-                param.requires_grad = False
-            self.normal_backbone.eval()
-
-        # Camera model
-        self.cam_model = FLNet()
-        load_valid(self.cam_model, CAM_MODEL_CKPT)
-
-        # SMPL Head
-        self.smpl_head = build_smpl_head()
-        # Optional: additional residual SMPL head (LoRA-like)
-        self.use_lora_head = bool(getattr(self.cfg.MODEL, 'ADDITIONAL_LORA_SMPL_HEAD', False))
+        # SMPL HEAD LORA DUPLICATE (BUT ZEROED DECODER LAYERS)
         self.smpl_head_lora = None
         if self.use_lora_head:
+            log.info("Using lora head")
             # Freeze the base head
-            for p in self.smpl_head.parameters():
+            for n, p in self.smpl_head.named_parameters():
+                log.info(f"Freezing {n}")
                 p.requires_grad = False
+
             # Create a residual head copy
             from copy import deepcopy
-            self.smpl_head_lora = deepcopy(self.smpl_head)
+            self.suse_lora_head = deepcopy(self.smpl_head)
             # Initialize residual head: encoder (transformer) random as usual; decoders zeroed
             def _init_module(m):
                 if isinstance(m, torch.nn.Linear):
@@ -142,8 +156,17 @@ class CameraHMR(pl.LightningModule):
             _init_module(self.smpl_head_lora.deccam)
             _init_module(self.smpl_head_lora.deckp)
 
-        # Loss: SMPL vertex normals (optional)
-        self.smpl_normal_loss = SMPLNormalLoss()
+        # TRAINING MODE: freeze backbones from training / finetune via config
+        self.freeze_backbone = getattr(self.cfg.MODEL, 'FREEZE_BACKBONE', False)
+        self.freeze_normal_backbone = getattr(self.cfg.MODEL, 'FREEZE_NORMAL_BACKBONE', False)
+        if self.freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
+            self.backbone.eval()
+        if self.freeze_normal_backbone:
+            for param in self.normal_backbone.parameters():
+                param.requires_grad = False
+            self.normal_backbone.eval()
 
         # Loss functions
         loss_type = cfg.TRAIN.LOSS_TYPE
@@ -155,14 +178,36 @@ class CameraHMR(pl.LightningModule):
         self.vertices_loss_l1l2 = VerticesLoss(loss_type=loss_type)
         self.vertices_loss_p2p = PointToPlaneLoss()
         self.smpl_parameter_loss = ParameterLoss()
+        self.smpl_normal_loss = SMPLNormalLoss()
 
         self.smpl = SMPL(SMPL_MODEL_DIR, gender='neutral')
+        self.smpl_male = SMPL(SMPL_MODEL_DIR, gender='male')
+        self.smpl_female = SMPL(SMPL_MODEL_DIR, gender='female')
+
+        self.smpl = torch.compile(self.smpl)
+        self.smpl_male = torch.compile(self.smpl_male)
+        self.smpl_female = torch.compile(self.smpl_female)
+
         self.smpl_layer = SMPLLayer(SMPL_MODEL_DIR, gender='neutral')
+        self.smpl_layer_male = SMPLLayer(SMPL_MODEL_DIR, gender='male')
+        self.smpl_layer_female = SMPLLayer(SMPL_MODEL_DIR, gender='female')
 
         # Ground truth SMPL models
         self.smpl_gt = smplx.SMPL(SMPL_MODEL_DIR, gender='neutral').cuda()
         self.smpl_gt_male = smplx.SMPL(SMPL_MODEL_DIR, gender='male').cuda()
         self.smpl_gt_female = smplx.SMPL(SMPL_MODEL_DIR, gender='female').cuda()
+
+        # TODO: SMPLX NOT IMPLEMENTED YET!!!
+        self.smplx_gt = smplx.SMPLX(SMPLX_MODEL_DIR, gender='neutral').cuda()
+        self.smplx_gt_male = smplx.SMPLX(SMPLX_MODEL_DIR, gender='male').cuda() 
+        self.smplx_gt_female = smplx.SMPLX(SMPLX_MODEL_DIR, gender='female').cuda()
+
+        self.gender_map = {0: 'male', 1: 'female', -1: 'neutral'}
+        self.gendered_list = ['neutral', 'male', 'female']
+        self.gendered_smpl_layers = [self.smpl_layer, self.smpl_layer_male, self.smpl_layer_female]
+
+        self.smplx2smpl = pickle.load(open(SMPLX2SMPL, 'rb'))
+        self.smplx2smpl = torch.tensor(self.smplx2smpl['matrix'][None], dtype=torch.float32)
 
         # Initialize ActNorm layers flag
         self.register_buffer('initialized', torch.tensor(False))
@@ -177,15 +222,9 @@ class CameraHMR(pl.LightningModule):
         # Store validation outputs
         self.validation_step_output = []
 
-        # Optionally load pretrained CameraHMR weights
-        if cfg.MODEL.FINETUNE:
-            ckpt_path = getattr(cfg.paths, 'camerahmr_ckpt', None)
-            if ckpt_path:
-                self.load_pretrained(ckpt_path, subset_modules=['smpl_head'], strict=False)
-
-    def load_pretrained(self, ckpt_path: str, subset_modules: List[str] = None, strict: bool = False):
+    def load_pretrained(self, ckpt_path: str, subset_modules: List[str] = None, strict: bool = False, decoder_blocks: List[str] = None, duplicate_gendered_heads: bool = False):
         try:
-            state = torch.load(ckpt_path, map_location='cpu')
+            state = torch.load(ckpt_path, map_location='cpu', weights_only=False)
             sd = state.get('state_dict', state)
             keep = {}
             for k, v in sd.items():
@@ -195,6 +234,18 @@ class CameraHMR(pl.LightningModule):
                     allow = any(k.startswith(module) for module in subset_modules)
                 if allow:
                     keep[k] = v
+            if duplicate_gendered_heads:
+                new_keep = {}
+                for k, v in list(keep.items()):  # iterate over a snapshot
+                    if k.startswith("smpl_head.") and any(k.startswith(f"smpl_head.{b}.") for b in decoder_blocks):
+                        # e.g., k == "smpl_head.decpose.weight" -> base_name == "weight"
+                        prefix, base_name = k.rsplit(".", 1)
+                        for i in range(3):
+                            new_keep[f"{prefix}.{i}.{base_name}"] = v
+                        # skip copying the old single-head key to avoid unexpected keys
+                    else:
+                        new_keep[k] = v
+                keep = new_keep
             missing, unexpected = self.load_state_dict(keep, strict=strict)
             log.info(f"Loaded pretrained from {ckpt_path}: missing={len(missing)} unexpected={len(unexpected)}")
         except Exception as e:
@@ -212,10 +263,15 @@ class CameraHMR(pl.LightningModule):
 
         param_groups = []
 
-        head_params = [p for p in self.smpl_head.parameters() if p.requires_grad]
+        head_params = []
+        head_params.extend([p for p in self.smpl_head.parameters() if p.requires_grad])
+        if self.smpl_head_lora is not None:
+            head_params.extend([p for p in self.smpl_head_lora.parameters() if p.requires_grad])
+
         # Include normal_injecter (if present) with head lr by default
         if getattr(self, 'normal_injecter', None) is not None:
             head_params.extend([p for p in self.normal_injecter.parameters() if p.requires_grad])
+
         if len(head_params) > 0:
             param_groups.append({'params': head_params, 'lr': head_lr})
 
@@ -234,8 +290,6 @@ class CameraHMR(pl.LightningModule):
             weight_decay=self.cfg.TRAIN.WEIGHT_DECAY
         )
         return optimizer
-
-
 
     def forward_step(self, batch: Dict, train: bool = False) -> Dict:
         # Use RGB image as input
@@ -293,100 +347,140 @@ class CameraHMR(pl.LightningModule):
         bbox_info[:, 2] = (bbox_info[:, 2] / cam_intrinsics[:, 0, 0])  # [-1, 1]
 
         bbox_info = bbox_info.cuda().float()
-        pred_smpl_params, pred_cam, decouts, pred_kp = self.smpl_head(conditioning_feats, bbox_info=bbox_info)
-        # Apply residual SMPL head if enabled
-        if self.use_lora_head and (self.smpl_head_lora is not None):
-            _, _, decouts_resid, pred_kp_resid = self.smpl_head_lora(conditioning_feats, bbox_info=bbox_info)
-            # Add residuals to the decoder outputs from base head
-            # Residuals are in 6D-body_pose, betas, cam, kp space before rotmat conversion
-            # Update pred_smpl_params by reconstructing from updated residuals
-            resid_body_pose6d = decouts['body_pose6d_residual'] + decouts_resid['body_pose6d_residual']
-            resid_betas = decouts['betas_residual'] + decouts_resid['betas_residual']
-            resid_cam = decouts['cam_residual'] + decouts_resid['cam_residual']
-            pred_kp = pred_kp + decouts_resid['kp_residual']
-            # Re-anchor on mean
-            batch_size = conditioning_feats.shape[0]
-            init_body_pose = self.smpl_head.init_body_pose.expand(batch_size, -1)
-            init_betas = self.smpl_head.init_betas.expand(batch_size, -1)
-            init_cam = self.smpl_head.init_cam.expand(batch_size, -1)
-            pred_body_pose6d = resid_body_pose6d + init_body_pose
-            pred_betas_vec = resid_betas + init_betas
-            pred_cam_vec = resid_cam + init_cam
-            # Convert 6D to rotmats and build SMPL params to feed the smpl layer below
-            pred_body_pose_rotmats = aa_to_rotmat(pred_body_pose6d.view(-1, 3)).view(batch_size, 24, 3, 3)
-            pred_smpl_params = {
-                'global_orient': pred_body_pose_rotmats[:, [0]],
-                'body_pose': pred_body_pose_rotmats[:, 1:],
-                'betas': pred_betas_vec
-            }
 
-        # Compute model vertices, joints and the projected joints
-        pred_smpl_params['global_orient'] = pred_smpl_params['global_orient'].reshape(batch_size, -1, 3, 3)
-        pred_smpl_params['body_pose'] = pred_smpl_params['body_pose'].reshape(batch_size, -1, 3, 3)
-        pred_smpl_params['betas'] = pred_smpl_params['betas'].reshape(batch_size, -1)
-        smpl_output = self.smpl_layer(**{k: v.float() for k,v in pred_smpl_params.items()}, pose2rot=False)
+        # Generate SMPL GT Parameters:
         if train:
-            smpl_output_gt = self.smpl(**{k: v.float() for k,v in batch['smpl_params'].items()})
-            batch['gt_vertices'] = smpl_output_gt.vertices
-            ones = torch.ones((batch_size, NUM_JOINTS, 1),device=self.device)
-            batch['keypoints_3d'] = torch.cat((smpl_output_gt.joints[:,:NUM_JOINTS], ones), dim=-1)
+            if self.enable_direct_gpu_process_gt_smpl_verts_and_normals:
+                male_gender = batch['gender'] == 0
+                female_gender = batch['gender'] == 1
+                smpl_output_gt_male = self.smpl_male(**{k: v.float() for k,v in batch['smpl_params'].items()})
+                smpl_output_gt_female = self.smpl_female(**{k: v.float() for k,v in batch['smpl_params'].items()})
+                # combine smpl_output_gt_male and smpl_output_gt_female by gender
+                # smpl_shape = self.smpl_gt.vertices.shape # 6890,3?
 
-        pred_keypoints_3d = smpl_output.joints
-        pred_vertices = smpl_output.vertices
-        output = {}
+                smpl_output_gt_vertices = torch.empty((batch_size, 6890, 3), dtype=self.smpl_gt.vertices.dtype, device=batch['gender'].device)
+                smpl_output_gt_vertices[male_gender] = smpl_output_gt_male.vertices
+                smpl_output_gt_vertices[female_gender] = smpl_output_gt_female.vertices
 
-        output['pred_keypoints_3d'] = pred_keypoints_3d.reshape(batch_size, -1, 3)
-        output['pred_vertices'] = pred_vertices.reshape(batch_size, -1, 3)
+                smpl_output_joints = smpl_output_gt_male.joints[:,:NUM_JOINTS] 
+                smpl_output_joints[female_gender] = smpl_output_gt_female.joints[:,:NUM_JOINTS]
 
-        # Compute predicted SMPL vertex normals (B, V, 3)
-        try:
-            faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=pred_vertices.device)
-            output['pred_vertex_normals'] = compute_normals_torch(output['pred_vertices'], faces_t)
-        except Exception:
-            # Keep training robust if faces/normals computation fails for some reason
-            logger.warning(f"Failed to compute predicted SMPL vertex normals for batch:{batch['imgname']}.")
-            output['pred_vertex_normals'] = None
+                faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=smpl_output_gt_vertices.device)
+                smpl_output_gt_normals = compute_normals_torch(smpl_output_gt_vertices, faces_t)
 
-        # Store useful regression outputs to the output dict
-        output['pred_cam'] = pred_cam
-        output['pred_smpl_params'] = {k: v.clone() for k,v in pred_smpl_params.items()}
+                smpl_output_gt = smpl_output_gt_male
+                smpl_output_gt[female_gender] = smpl_output_gt_female
 
-        # Compute camera translation
-        device = pred_smpl_params['body_pose'].device
-        dtype = pred_smpl_params['body_pose'].dtype
+                batch['vertices'] = smpl_output_gt_vertices
+                batch['smpl_normals'] = smpl_output_gt_normals
+                ones = torch.ones((batch_size, NUM_JOINTS, 1),device=self.device)
+                batch['keypoints_3d'] = torch.cat((smpl_output_joints, ones), dim=-1)
+            # Calculated in DS get_item / DS init
+            # else:
+            #     batch['vertices'] = batch['vertices']
+            #     batch['smpl_normals'] = batch['smpl_normals']
+            #     batch['keypoints_3d'] = batch['keypoints_3d']
 
-        cam_t = convert_to_full_img_cam(
-            pare_cam=output['pred_cam'],
-            bbox_height=batch['box_size'],
-            bbox_center=batch['box_center'],
-            img_w=img_w,
-            img_h=img_h,
-            focal_length=batch['cam_int'][:, 0, 0],
-        )
+        gendered_pred_smpl_params_list = self.smpl_head(rgb_feats, bbox_info=bbox_info)
+        if self.use_lora_head and (self.smpl_head_lora is not None):
+            gendered_pred_smpl_params_list_lora = self.smpl_head_lora(conditioning_feats, bbox_info=bbox_info)
+        
+        output_gendered = []
+        # for each gender (0: neutral, 1: male, 2: female)
+        for i in range(3):
+            pred_smpl_params, pred_cam, decouts, pred_kp = gendered_pred_smpl_params_list[i]
+            # if lora head is used
+            if self.use_lora_head and (self.smpl_head_lora is not None):
+                _, _, decouts_resid, _ = gendered_pred_smpl_params_list_lora[i]
+                # Add residuals to the decoder outputs from base head
+                # Residuals are in 6D-body_pose, betas, cam, kp space before rotmat conversion
+                # Update pred_smpl_params by reconstructing from updated residuals
+                resid_body_pose6d = decouts['body_pose6d_residual'] + decouts_resid['body_pose6d_residual']
+                resid_betas = decouts['betas_residual'] + decouts_resid['betas_residual']
+                resid_cam = decouts['cam_residual'] + decouts_resid['cam_residual']
+                pred_kp = pred_kp + decouts_resid['kp_residual']
+                # Re-anchor on mean
+                batch_size = conditioning_feats.shape[0]
 
+                init_body_pose = self.smpl_head.init_body_pose.expand(batch_size, -1)
+                init_betas = self.smpl_head.init_betas.expand(batch_size, -1)
+                init_cam = self.smpl_head.init_cam.expand(batch_size, -1)
 
-        output['pred_cam_t'] = cam_t
+                pred_body_pose6d = resid_body_pose6d + init_body_pose
+                pred_betas_vec = resid_betas + init_betas
+                pred_cam = resid_cam + init_cam
+                # Convert 6D to rotmats and build SMPL params to feed the smpl layer below
+                pred_body_pose_rotmats = aa_to_rotmat(pred_body_pose6d.view(-1, 3)).view(batch_size, 24, 3, 3)
+                pred_smpl_params = {
+                    'global_orient': pred_body_pose_rotmats[:, [0]],
+                    'body_pose': pred_body_pose_rotmats[:, 1:],
+                    'betas': pred_betas_vec
+                }
 
-        joints2d = perspective_projection(
-            output['pred_keypoints_3d'],
-            rotation=torch.eye(3, device=device).unsqueeze(0).expand(batch_size, -1, -1),
-            translation=cam_t,
-            cam_intrinsics=batch['cam_int'],
-        )
-        if self.cfg.LOSS_WEIGHTS['VERTS2D'] or self.cfg.LOSS_WEIGHTS['VERTS2D_CROP'] or self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM']:
-            pred_verts_subsampled = self.downsample_mat.matmul(output['pred_vertices'])
+            # Compute model vertices, joints and the projected joints
+            pred_smpl_params['global_orient'] = pred_smpl_params['global_orient'].reshape(batch_size, -1, 3, 3)
+            pred_smpl_params['body_pose'] = pred_smpl_params['body_pose'].reshape(batch_size, -1, 3, 3)
+            pred_smpl_params['betas'] = pred_smpl_params['betas'].reshape(batch_size, -1)
 
-            pred_verts2d = perspective_projection(
-                pred_verts_subsampled,
+            # ADDITIONALLY USE GENDER INFO TO PREDICT THE SMPL MODELS and BETTER USE FOR SMPL GT
+            smpl_output = self.gendered_smpl_layers[i](**{k: v.float() for k,v in pred_smpl_params.items()}, pose2rot=False)
+
+            pred_keypoints_3d = smpl_output.joints
+            pred_vertices = smpl_output.vertices
+            output = {}
+
+            output['pred_keypoints_3d'] = pred_keypoints_3d.reshape(batch_size, -1, 3)
+            output['pred_vertices'] = pred_vertices.reshape(batch_size, -1, 3)
+            # Compute predicted SMPL vertex normals (B, V, 3)
+            # faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=pred_vertices.device)
+            # try:
+            #     output['pred_vertex_normals'] = compute_normals_torch(output['pred_vertices'], faces_t)
+            # except Exception:
+            #     # Keep training robust if faces/normals computation fails for some reason
+            #     logger.warning(f"Failed to compute predicted SMPL vertex normals for batch:{batch['imgname']}.")
+            #     output['pred_vertex_normals'] = None
+
+            # Store useful regression outputs to the output dict
+            output['pred_cam'] = pred_cam
+            output['pred_smpl_params'] = {k: v.clone() for k,v in pred_smpl_params.items()}
+
+            # Compute camera translation
+            device = pred_smpl_params['body_pose'].device
+            dtype = pred_smpl_params['body_pose'].dtype
+
+            cam_t = convert_to_full_img_cam(
+                pare_cam=output['pred_cam'],
+                bbox_height=batch['box_size'],
+                bbox_center=batch['box_center'],
+                img_w=img_w,
+                img_h=img_h,
+                focal_length=batch['cam_int'][:, 0, 0],
+            )
+
+            output['pred_cam_t'] = cam_t
+
+            ## 2D Joints Projection
+            joints2d = perspective_projection(
+                output['pred_keypoints_3d'],
                 rotation=torch.eye(3, device=device).unsqueeze(0).expand(batch_size, -1, -1),
                 translation=cam_t,
                 cam_intrinsics=batch['cam_int'],
             )
-            output['pred_verts2d'] = pred_verts2d
+            if self.cfg.LOSS_WEIGHTS['VERTS2D'] or self.cfg.LOSS_WEIGHTS['VERTS2D_CROP'] or self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM']:
+                pred_verts_subsampled = self.downsample_mat.matmul(output['pred_vertices'])
 
+                pred_verts2d = perspective_projection(
+                    pred_verts_subsampled,
+                    rotation=torch.eye(3, device=device).unsqueeze(0).expand(batch_size, -1, -1),
+                    translation=cam_t,
+                    cam_intrinsics=batch['cam_int'],
+                )
+                output['pred_verts2d'] = pred_verts2d
+            output['pred_keypoints_2d'] = joints2d.reshape(batch_size, -1, 2)
 
-        output['pred_keypoints_2d'] = joints2d.reshape(batch_size, -1, 2)
-        return output, fl_h
+            output_gendered.append(output)
+
+        return output_gendered, fl_h
 
     def perspective_projection_vis(self, input_batch, output, max_save_img=1):
         import os
@@ -394,7 +488,7 @@ class CameraHMR(pl.LightningModule):
 
 
         translation = input_batch['translation'].detach()[:,:3]
-        vertices = input_batch['gt_vertices'].detach()
+        vertices = input_batch['vertices'].detach()
         for i in range(len(input_batch['imgname'])):
             cy, cx = input_batch['img_size'][i] // 2
             img_h, img_w = cy*2, cx*2
@@ -418,127 +512,138 @@ class CameraHMR(pl.LightningModule):
             if i >= (max_save_img - 1):
                 break
 
-    def compute_loss(self, batch: Dict, output: Dict, train: bool = True) -> torch.Tensor:
-
-        pred_smpl_params = output['pred_smpl_params']
-        pred_keypoints_2d = output['pred_keypoints_2d']
-        pred_keypoints_3d = output['pred_keypoints_3d']
-        pred_vertices = output['pred_vertices']
-
-        batch_size = pred_smpl_params['body_pose'].shape[0]
-        device = pred_smpl_params['body_pose'].device
-        dtype = pred_smpl_params['body_pose'].dtype
-
+    def compute_gendered_loss(self, batch: Dict, gendered_output: List[Dict], train: bool = True) -> torch.Tensor:
         # Get annotations
         gt_keypoints_3d = batch['keypoints_3d']
         gt_smpl_params = batch['smpl_params']
-
-
         img_size = batch['img_size'].rot90().T.unsqueeze(1)
 
-        loss_keypoints_3d = self.keypoint_3d_loss(pred_keypoints_3d, gt_keypoints_3d, pelvis_id=25+14)
-        faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=output['pred_vertices'].device)
-        loss_vertices = self.vertices_loss_l1l2(output['pred_vertices'], batch['gt_vertices'])
-        loss_vertices_pt2plane = self.vertices_loss_p2p(output['pred_vertices'], batch['gt_vertices'], faces_t)
+        total_loss = 0
 
-        # Compute loss on SMPL parameters
-        loss_smpl_params = {}
-        for k, pred in pred_smpl_params.items():
-            gt = gt_smpl_params[k].view(batch_size, -1)
-            if 'beta' not in k:
-                gt = aa_to_rotmat(gt.reshape(-1, 3)).view(batch_size, -1, 3, 3)
-            loss_smpl_params[k] = self.smpl_parameter_loss(pred.reshape(batch_size, -1), gt.reshape(batch_size, -1))
+        # apply gendered mask to the outputs
+        batch_size = batch['gender'].shape[0]
+        gendered_mask = torch.ones((3, batch_size), dtype=torch.bool, device=batch['gender'].device)
+        # gendered_mask[0] all 1 for neutral
+        gendered_mask[1] = batch['gender'] == 0 # male
+        gendered_mask[2] = batch['gender'] == 1 # female
 
-        loss = self.cfg.LOSS_WEIGHTS['KEYPOINTS_3D'] * loss_keypoints_3d +\
-                sum([loss_smpl_params[k] * self.cfg.LOSS_WEIGHTS[k.upper()] for k in loss_smpl_params])+\
-                self.cfg.LOSS_WEIGHTS['VERTICES'] * loss_vertices +\
-                self.cfg.LOSS_WEIGHTS.get('VERTICES_P2PL', 0.0) * loss_vertices_pt2plane
+        for i, output in enumerate(gendered_output):
+            gendered_name = self.gendered_list[i]
+            loss = 0
+            loss_mask = gendered_mask[i]
+            pred_smpl_params = output['pred_smpl_params']
+            pred_keypoints_2d = output['pred_keypoints_2d']
+            pred_keypoints_3d = output['pred_keypoints_3d']
+            pred_vertices = output['pred_vertices']
 
-        # SMPL vertex normal cosine loss (uses SMPLNormalLoss)
-        w_normals = self.cfg.LOSS_WEIGHTS.get('SMPL_NORMALS', 0.0)
-        if w_normals and ('gt_vertices' in batch):
+            # SMPL vertices / point losses
+            loss_keypoints_3d = loss_mask * self.keypoint_3d_loss(pred_keypoints_3d, gt_keypoints_3d, pelvis_id=25+14)
             faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=pred_vertices.device)
-            # imgnames = batch.get('imgname', None)
-            loss_normals = self.smpl_normal_loss(pred_vertices, batch['gt_vertices'], faces_t) #, imgnames=imgnames
-            loss = loss + w_normals * loss_normals
+            loss_vertices = loss_mask * self.vertices_loss_l1l2(pred_vertices, batch['vertices'])
+            loss_vertices_pt2plane = loss_mask * self.vertices_loss_p2p(pred_vertices, batch['vertices'], faces_t)
 
+            # Compute loss on SMPL parameters
+            loss_smpl_params = {}
+            for k, pred in pred_smpl_params.items():
+                gt = gt_smpl_params[k].view(batch_size, -1)
+                if 'beta' not in k:
+                    gt = aa_to_rotmat(gt.reshape(-1, 3)).view(batch_size, -1, 3, 3)
+                loss_smpl_params[k] = loss_mask * self.smpl_parameter_loss(pred.reshape(batch_size, -1), gt.reshape(batch_size, -1))
 
-        if self.cfg.LOSS_WEIGHTS['VERTS2D_CROP']:
-            gt_verts2d = batch['proj_verts']
-            pred_verts2d = output['pred_verts2d']
-            pred_verts2d_cropped = trans_points2d_parallel(pred_verts2d, batch['_trans'])
-            pred_verts2d_cropped = pred_verts2d_cropped/ self.cfg.MODEL.IMAGE_SIZE - 0.5
-            gt_verts_2d_cropped = gt_verts2d.clone()
-            gt_verts_2d_cropped[:,:,:2] = trans_points2d_parallel(gt_verts2d[:,:,:2], batch['_trans'])
-            gt_verts_2d_cropped[:,:,:2] = gt_verts_2d_cropped[:,:,:2]/ self.cfg.MODEL.IMAGE_SIZE - 0.5
+            # SMPL vertex normal cosine loss
+            w_normals = self.cfg.LOSS_WEIGHTS.get('SMPL_NORMALS', 0.0)
+            if w_normals and ('vertices' in batch):
+                gt_vertices = batch['vertices']
+                # imgnames = batch.get('imgname', None)
+                loss_normals = loss_mask * self.smpl_normal_loss(pred_vertices, gt_vertices, faces_t) #, imgnames=imgnames
 
-            loss_proj_vertices_cropped = self.keypoint_2d_loss(pred_verts2d_cropped, gt_verts_2d_cropped)
-            loss += self.cfg.LOSS_WEIGHTS['VERTS2D_CROP'] * loss_proj_vertices_cropped
+            loss = self.cfg.LOSS_WEIGHTS['KEYPOINTS_3D'] * loss_keypoints_3d + \
+                    sum([loss_smpl_params[k] * self.cfg.LOSS_WEIGHTS[k.upper()] for k in loss_smpl_params])+ \
+                    self.cfg.LOSS_WEIGHTS['VERTICES'] * loss_vertices + \
+                    self.cfg.LOSS_WEIGHTS.get('VERTICES_P2PL', 0.0) * loss_vertices_pt2plane + \
+                    w_normals * loss_normals
 
-        if self.cfg.LOSS_WEIGHTS['VERTS2D']:
-            gt_verts2d = batch['proj_verts'].clone()
-            pred_verts2d = output['pred_verts2d'].clone()
-            pred_verts2d[:, :, :2] = 2 * (pred_verts2d[:, :, :2] / img_size) - 1
-            gt_verts2d[:, :, :2] = 2 * (gt_verts2d[:, :, :2] / img_size) - 1
-            loss_proj_vertices = self.keypoint_2d_loss(pred_verts2d, gt_verts2d)
-            loss += self.cfg.LOSS_WEIGHTS['VERTS2D'] * loss_proj_vertices
+            # crop / scaled / normed projected 2d vertices losses
+            if self.cfg.LOSS_WEIGHTS['VERTS2D_CROP']:
+                gt_verts2d = batch['proj_verts']
+                pred_verts2d = output['pred_verts2d']
+                pred_verts2d_cropped = trans_points2d_parallel(pred_verts2d, batch['_trans'])
+                pred_verts2d_cropped = pred_verts2d_cropped/ self.cfg.MODEL.IMAGE_SIZE - 0.5
+                gt_verts_2d_cropped = gt_verts2d.clone()
+                gt_verts_2d_cropped[:,:,:2] = trans_points2d_parallel(gt_verts2d[:,:,:2], batch['_trans'])
+                gt_verts_2d_cropped[:,:,:2] = gt_verts_2d_cropped[:,:,:2]/ self.cfg.MODEL.IMAGE_SIZE - 0.5
 
-        if self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM']:
+                loss_proj_vertices_cropped = self.keypoint_2d_loss(pred_verts2d_cropped, gt_verts_2d_cropped)
+                loss += self.cfg.LOSS_WEIGHTS['VERTS2D_CROP'] * loss_proj_vertices_cropped
 
-            gt_verts2d = batch['proj_verts'].clone()
-            pred_verts2d = output['pred_verts2d'].clone()
+            if self.cfg.LOSS_WEIGHTS['VERTS2D']:
+                gt_verts2d = batch['proj_verts'].clone()
+                pred_verts2d = output['pred_verts2d'].clone()
+                pred_verts2d[:, :, :2] = 2 * (pred_verts2d[:, :, :2] / img_size) - 1
+                gt_verts2d[:, :, :2] = 2 * (gt_verts2d[:, :, :2] / img_size) - 1
+                loss_proj_vertices = self.keypoint_2d_loss(pred_verts2d, gt_verts2d)
+                loss += self.cfg.LOSS_WEIGHTS['VERTS2D'] * loss_proj_vertices
 
-            pred_verts2d[:, :, :2] =  (pred_verts2d[:, :, :2] - pred_verts2d[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
-            gt_verts2d[:, :, :2] =  (gt_verts2d[:, :, :2] - gt_verts2d[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
-            loss_proj_vertices_norm = self.keypoint_2d_loss(pred_verts2d, gt_verts2d)
-            loss += self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM'] * loss_proj_vertices_norm
+            if self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM']:
 
-        if self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_CROP']:
+                gt_verts2d = batch['proj_verts'].clone()
+                pred_verts2d = output['pred_verts2d'].clone()
 
-            gt_keypoints_2d = batch['keypoints_2d'].clone()
-            pred_keypoints_2d_cropped = trans_points2d_parallel(pred_keypoints_2d, batch['_trans'])
-            pred_keypoints_2d_cropped = pred_keypoints_2d_cropped/ self.cfg.MODEL.IMAGE_SIZE - 0.5
+                pred_verts2d[:, :, :2] =  (pred_verts2d[:, :, :2] - pred_verts2d[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
+                gt_verts2d[:, :, :2] =  (gt_verts2d[:, :, :2] - gt_verts2d[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
+                loss_proj_vertices_norm = self.keypoint_2d_loss(pred_verts2d, gt_verts2d)
+                loss += self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM'] * loss_proj_vertices_norm
 
-            loss_keypoints_2d_cropped = self.keypoint_2d_loss(pred_keypoints_2d_cropped, gt_keypoints_2d)
-            loss += self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_CROP'] * loss_keypoints_2d_cropped
+            # crop / scaled / normed projected 2D keypoint losses
+            if self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_CROP']:
 
-        if self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D']:
-            pred_keypoints_2d_clone = pred_keypoints_2d.clone()
-            pred_keypoints_2d_clone[:, :, :2] = 2 * (pred_keypoints_2d_clone[:, :, :2] / img_size) - 1
-            gt_keypoints_2d = batch['orig_keypoints_2d']
-            gt_keypoints_2d[:, :, :2] = 2 * (gt_keypoints_2d[:, :, :2] / img_size) - 1
-            loss_keypoints_2d = self.keypoint_2d_loss_scaled(pred_keypoints_2d_clone, gt_keypoints_2d, batch['box_size'], img_size)
-            loss += self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D'] * loss_keypoints_2d
+                gt_keypoints_2d = batch['keypoints_2d'].clone()
+                pred_keypoints_2d_cropped = trans_points2d_parallel(pred_keypoints_2d, batch['_trans'])
+                pred_keypoints_2d_cropped = pred_keypoints_2d_cropped/ self.cfg.MODEL.IMAGE_SIZE - 0.5
 
-        if self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_NORM']:
-            # This loss would neek full kp loss or crop kp loss to anchor the root joint
-            pred_keypoints_2d_clone = pred_keypoints_2d.clone()
-            pred_keypoints_2d_clone[:, :, :2] =  (pred_keypoints_2d_clone[:, :, :2] - pred_keypoints_2d_clone[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
-            gt_keypoints_2d = batch['orig_keypoints_2d'].clone()
-            gt_keypoints_2d[:, :, :2] =  (gt_keypoints_2d[:, :, :2] - gt_keypoints_2d[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
-            loss_keypoints_2d_norm = self.keypoint_2d_loss(pred_keypoints_2d_clone, gt_keypoints_2d)
-            loss += self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_NORM'] * loss_keypoints_2d_norm
+                loss_keypoints_2d_cropped = self.keypoint_2d_loss(pred_keypoints_2d_cropped, gt_keypoints_2d)
+                loss += self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_CROP'] * loss_keypoints_2d_cropped
 
-        if self.cfg.LOSS_WEIGHTS['TRANS_LOSS']:
+            if self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D']:
+                pred_keypoints_2d_clone = pred_keypoints_2d.clone()
+                pred_keypoints_2d_clone[:, :, :2] = 2 * (pred_keypoints_2d_clone[:, :, :2] / img_size) - 1
+                gt_keypoints_2d = batch['orig_keypoints_2d']
+                gt_keypoints_2d[:, :, :2] = 2 * (gt_keypoints_2d[:, :, :2] / img_size) - 1
+                loss_keypoints_2d = self.keypoint_2d_loss_scaled(pred_keypoints_2d_clone, gt_keypoints_2d, batch['box_size'], img_size)
+                loss += self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D'] * loss_keypoints_2d
 
-            gt_trans = batch['translation'][:,:3]
-            pred_trans = output['pred_cam_t']
-            loss_trans = self.trans_loss(pred_trans, gt_trans)
-            loss += self.cfg.LOSS_WEIGHTS['TRANS_LOSS'] * loss_trans
+            if self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_NORM']:
+                # This loss would neek full kp loss or crop kp loss to anchor the root joint
+                pred_keypoints_2d_clone = pred_keypoints_2d.clone()
+                pred_keypoints_2d_clone[:, :, :2] =  (pred_keypoints_2d_clone[:, :, :2] - pred_keypoints_2d_clone[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
+                gt_keypoints_2d = batch['orig_keypoints_2d'].clone()
+                gt_keypoints_2d[:, :, :2] =  (gt_keypoints_2d[:, :, :2] - gt_keypoints_2d[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
+                loss_keypoints_2d_norm = self.keypoint_2d_loss(pred_keypoints_2d_clone, gt_keypoints_2d)
+                loss += self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_NORM'] * loss_keypoints_2d_norm
 
-        losses = dict(loss=loss.detach(),
-                      loss_keypoints_3d=loss_keypoints_3d.detach(),
-                      loss_vertices=loss_vertices.detach(),
-                      loss_vertices_pt2plane=loss_vertices_pt2plane.detach(),
-                      loss_kp2d_cropped=loss_keypoints_2d_cropped.detach())
-        for k, v in loss_smpl_params.items():
-            losses['loss_' + k] = v.detach()
-        if w_normals and ('gt_vertices' in batch):
-            losses['loss_smpl_normals'] = loss_normals.detach()
+            # camera translation loss
+            if self.cfg.LOSS_WEIGHTS['TRANS_LOSS']:
 
-        output['losses'] = losses
+                gt_trans = batch['translation'][:,:3]
+                pred_trans = output['pred_cam_t']
+                loss_trans = self.trans_loss(pred_trans, gt_trans)
+                loss += self.cfg.LOSS_WEIGHTS['TRANS_LOSS'] * loss_trans
 
-        return loss
+            total_loss += loss
+
+            losses = dict(loss=loss.detach(),
+                        loss_keypoints_3d=loss_keypoints_3d.detach(),
+                        loss_vertices=loss_vertices.detach(),
+                        loss_vertices_pt2plane=loss_vertices_pt2plane.detach(),
+                        loss_smpl_normals=loss_normals.detach(),
+                        loss_kp2d_cropped=loss_keypoints_2d_cropped.detach())
+
+            for k, v in loss_smpl_params.items():
+                losses['loss_' + k] = v.detach()
+
+            output['losses_{gendered_name}'] = losses
+
+        return total_loss
 
 
     def forward(self, batch: Dict) -> Dict:
@@ -553,15 +658,15 @@ class CameraHMR(pl.LightningModule):
         # if self.cfg.LOSS_WEIGHTS.ADVERSARIAL > 0:
         batch_size = batch['img'].shape[0]
 
-        output,_ = self.forward_step(batch, train=True)
-        pred_smpl_params = output['pred_smpl_params']
+        gendered_output,_ = self.forward_step(batch, train=True)
 
-        loss = self.compute_loss(batch, output, train=True)
+        loss = self.compute_gendered_loss(batch, gendered_output, train=True)
         # Error if Nan
         if torch.isnan(loss):
-            print(batch['imgname'])
-            for k,v in output['losses'].items():
-                print(k,v)
+            print('nan',batch['imgname'])
+            for gendered_name, output in gendered_output:
+                for k,v in output['losses_{gendered_name}'].items():
+                    print('nan',gendered_name,k,v)
 
         optimizer.zero_grad()
         self.manual_backward(loss)
@@ -571,15 +676,21 @@ class CameraHMR(pl.LightningModule):
             self.log('train/grad_norm', gn, on_step=True, on_epoch=True, prog_bar=True, logger=True,sync_dist=True)
         optimizer.step()
 
-        self.log('train/loss', output['losses']['loss'], on_step=True, on_epoch=True, prog_bar=True, logger=False,sync_dist=True)
-        return output
+        # build a single dict with all gendered losses, then log
+        metric_dict = {
+            f"train/loss_{name}": output[f"losses_{name}"]["loss"]
+            for name in self.gendered_list  # e.g., ["neutral", "male", "female"]
+        }
+        self.log_dict(metric_dict, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+
+        return gendered_output
 
 
 
     def validation_step(self, batch: Dict, batch_idx: int, dataloader_idx=0) -> Dict:
 
         batch_size = batch['img'].shape[0]
-        output,_ = self.forward_step(batch, train=False)
+        gendered_output,_ = self.forward_step(batch, train=False)
         dataset_names = batch['dataset']
 
         joint_mapper_h36m = H36M_TO_J14
@@ -597,7 +708,7 @@ class CameraHMR(pl.LightningModule):
             gt_cam_vertices = gt_cam_vertices - gt_pelvis
             # Convert predicted vertices to SMPL Fromat
             # Get 14 predicted joints from the mesh
-            pred_cam_vertices = output['pred_vertices']
+            pred_cam_vertices = gendered_output[0]['pred_vertices']
 
             pred_keypoints_3d = torch.matmul(J_regressor_batch_smpl, pred_cam_vertices)
             pred_pelvis = pred_keypoints_3d[:, [0], :].clone()
@@ -616,7 +727,7 @@ class CameraHMR(pl.LightningModule):
             gt_pelvis = (gt_keypoints_3d[:, [1], :] + gt_keypoints_3d[:, [2], :]) / 2.0
             gt_keypoints_3d = gt_keypoints_3d - gt_pelvis
             gt_cam_vertices = gt_cam_vertices - gt_pelvis
-            pred_cam_vertices = output['pred_vertices']
+            pred_cam_vertices = gendered_output[0]['pred_vertices']
 
             pred_keypoints_3d = torch.matmul(self.smpl.J_regressor, pred_cam_vertices)
             pred_pelvis = (pred_keypoints_3d[:, [1], :] + pred_keypoints_3d[:, [2], :]) / 2.0
@@ -635,7 +746,7 @@ class CameraHMR(pl.LightningModule):
             gt_pelvis = (gt_keypoints_3d[:, [1], :] + gt_keypoints_3d[:, [2], :]) / 2.0
             gt_keypoints_3d = gt_keypoints_3d - gt_pelvis
             gt_cam_vertices = gt_cam_vertices - gt_pelvis
-            pred_cam_vertices = output['pred_vertices']
+            pred_cam_vertices = gendered_output[0]['pred_vertices']
             pred_keypoints_3d = torch.matmul(self.smpl.J_regressor, pred_cam_vertices)
             pred_pelvis = (pred_keypoints_3d[:, [1], :] + pred_keypoints_3d[:, [2], :]) / 2.0
             pred_keypoints_3d = pred_keypoints_3d - pred_pelvis
@@ -664,7 +775,7 @@ class CameraHMR(pl.LightningModule):
                 smpl_output_gt[female_indices] = self.smpl_gt_female(**female_batch).vertices
 
             gt_cam_vertices =smpl_output_gt
-            pred_cam_vertices = output['pred_vertices']
+            pred_cam_vertices = gendered_output[0]['pred_vertices']
 
             gt_keypoints_3d = torch.matmul(J_regressor_batch_smpl, gt_cam_vertices)
             pred_keypoints_3d = torch.matmul(J_regressor_batch_smpl, pred_cam_vertices)
@@ -683,9 +794,9 @@ class CameraHMR(pl.LightningModule):
 
         img_h = batch['img_size'][:,0]
         img_w = batch['img_size'][:,1]
-        device = output['pred_cam'].device
+        device = gendered_output[0]['pred_cam'].device
         cam_t = convert_to_full_img_cam(
-            pare_cam=output['pred_cam'],
+            pare_cam=gendered_output[0]['pred_cam'],
             bbox_height=batch['box_size'],
             bbox_center=batch['box_center'],
             img_w=img_w,
@@ -694,7 +805,7 @@ class CameraHMR(pl.LightningModule):
         )
 
         joints2d = perspective_projection(
-            output['pred_keypoints_3d'],
+            gendered_output[0]['pred_keypoints_3d'],
             rotation=torch.eye(3, device=device).unsqueeze(0).expand(batch_size, -1, -1),
             translation=cam_t,
             cam_intrinsics=batch['cam_int'],

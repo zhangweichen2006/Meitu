@@ -8,11 +8,11 @@ from ..utils.geometry import rot6d_to_rotmat, aa_to_rotmat
 from ..components.pose_transformer import TransformerDecoder
 from ..constants import TRANSFORMER_DECODER, SMPL_MEAN_PARAMS_FILE, NUM_BETAS, NUM_POSE_PARAMS
 
-def build_smpl_head():
-    return SMPLTransformerDecoderHead()
+def build_smpl_head_gendered():
+    return GenderedSMPLTransformerDecoderHead()
 
 
-class SMPLTransformerDecoderHead(nn.Module):
+class GenderedSMPLTransformerDecoderHead(nn.Module):
 
     def __init__(self):
         super().__init__()

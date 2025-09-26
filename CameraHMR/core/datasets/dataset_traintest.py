@@ -177,22 +177,6 @@ class DatasetTrainTest(Dataset):
         except KeyError:
             self.gender = -1 * np.ones(len(self.imgname)).astype(np.int32)
 
-        self.smpl_gt_male = smplx.SMPL(SMPL_MODEL_DIR,
-                                gender='male')
-        self.smpl_gt_female = smplx.SMPL(SMPL_MODEL_DIR,
-                                    gender='female')
-        self.smpl_gt_neutral = smplx.SMPL(SMPL_MODEL_DIR,
-                                    gender='neutral')
-
-        self.smplx_gt_male = smplx.SMPLX(SMPLX_MODEL_DIR,
-                                gender='male')
-        self.smplx_gt_female = smplx.SMPLX(SMPLX_MODEL_DIR,
-                                    gender='female')
-        self.smplx_gt_neutral = smplx.SMPLX(SMPLX_MODEL_DIR,
-                                    gender='neutral')
-        self.smplx2smpl = pickle.load(open(SMPLX2SMPL, 'rb'))
-        self.smplx2smpl = torch.tensor(self.smplx2smpl['matrix'][None],
-                                        dtype=torch.float32)
 
         if 'cam_ext' in self.data:
             self.cam_ext = self.data['cam_ext']
@@ -205,32 +189,78 @@ class DatasetTrainTest(Dataset):
         else:
             self.trans_cam = np.zeros((len(self.imgname),3))
 
-        if 'smpl_normals' in self.data:
-            self.smpl_normals = self.data['smpl_normals']
-        else:
-            log.info(f'Processing smpl normals ...')
-            smpl_normals_arr = []
-            # batch compute smpl_normals (batch size = 16)
-            for i in range(0, len(self.imgname)):
-                smpl_output = self.smpl_gt_neutral.forward(
-                    global_orient=torch.from_numpy(self.pose[i][:3]).float().unsqueeze(0),
-                    body_pose=torch.from_numpy(self.pose[i][3:]).float().unsqueeze(0),
-                    betas=torch.from_numpy(self.betas[i]).float().unsqueeze(0)
-                )
-                verts = smpl_output.vertices.squeeze(0)
-                faces_t = torch.as_tensor(self.smpl_gt_neutral.faces, dtype=torch.long, device=self.device)
-                vertex_normals = compute_normals_torch(verts, faces_t)
-                smpl_normals_arr.append(vertex_normals.detach().cpu().numpy()) # trimesh vertex_normal (area-weighted) is different from open3d and this torch computed normal (angle-weighted)
-            self.smpl_normals = np.array(smpl_normals_arr)
-            # save smpl_normals to dataset
-            self.data['smpl_normals'] = self.smpl_normals
-            np.savez(DATASET_FILES[self.version][dataset], **self.data)
+        # DISABLED due to slow disk IO: directly run in Forward step use multi-GPU ...
+        self.enable_direct_gpu_process_gt_smpl_verts_and_normals = self.cfg.trainer.get('enable_direct_gpu_process_gt_smpl_verts_and_normals', True)
+        self.enable_loading_smpl_verts_and_normals = self.cfg.DATASETS.CONFIG.get('enable_loading_smpl_verts_and_normals', False)
 
+        if not self.enable_direct_gpu_process_gt_smpl_verts_and_normals:
+            if 'smplx' in self.dataset:
+                self.smplx_gt_male = smplx.SMPLX(SMPLX_MODEL_DIR, gender='male')
+                self.smplx_gt_female = smplx.SMPLX(SMPLX_MODEL_DIR, gender='female')
+                self.smplx_gt_neutral = smplx.SMPLX(SMPLX_MODEL_DIR, gender='neutral')
+                self.smplx2smpl = pickle.load(open(SMPLX2SMPL, 'rb'))
+                self.smplx2smpl = torch.tensor(self.smplx2smpl['matrix'][None], dtype=torch.float32)
 
-        if 'pi3_pc' in self.data:
-            self.pi3_pc = self.data['pi3_pc']
+            self.smpl_gt_male = smplx.SMPL(SMPL_MODEL_DIR, gender='male')
+            self.smpl_gt_female = smplx.SMPL(SMPL_MODEL_DIR, gender='female')
+            self.smpl_gt_neutral = smplx.SMPL(SMPL_MODEL_DIR, gender='neutral')
+
+            if self.enable_loading_smpl_verts_and_normals and 'smpl_verts_and_normals' in self.data and not self.check_file_completeness_and_filter:
+                self.smpl_normals = self.data['smpl_normals']
+                self.smpl_verts = self.data['smpl_verts']
+            else:
+                log.info(f'Processing smpl verts and normals ...')
+                smpl_verts_arr = []
+                smpl_normals_arr = []
+                # batch compute smpl_normals (batch size = 16)
+                for index in range(0, len(self.imgname)):
+                    if self.gender[index] == 1:
+                        smplmodel = self.smpl_gt_female
+                    elif self.gender[index] == 0:
+                        smplmodel = self.smpl_gt_male
+                    else:
+                        smplmodel = self.smpl_gt_neutral
+
+                    smpl_params = {'global_orient': self.pose[index][:3].astype(np.float32),
+                                'body_pose': self.pose[index][3:].astype(np.float32),
+                                'betas': self.betas[index].astype(np.float32)}
+
+                    if 'smplx' in self.dataset:
+                        if self.gender[index] == 1:
+                            smplmodel = self.smplx_gt_female
+                        elif self.gender[index] == 0:
+                            smplmodel = self.smplx_gt_male
+                        else:
+                            smplmodel = self.smplx_gt_neutral
+
+                        smpl_params = {'global_orient': self.pose[index][:3].astype(np.float32),
+                                    'body_pose': self.pose[index][3:66].astype(np.float32),
+                                    'betas': self.betas[index].astype(np.float32)}
+                                    
+                    gt_smpl_out = smplmodel(
+                                global_orient=torch.from_numpy(smpl_params['global_orient']).unsqueeze(0),
+                                body_pose=torch.from_numpy(smpl_params['body_pose']).unsqueeze(0),
+                                betas=torch.from_numpy(smpl_params['betas']).unsqueeze(0))
+                    gt_vertices = gt_smpl_out.vertices
+                    if 'smplx' in self.dataset:
+                        gt_vertices = torch.matmul(self.smplx2smpl, gt_vertices)
+                    smpl_verts_arr.append(gt_vertices.detach().cpu().numpy())
+                    
+                    verts = gt_vertices.squeeze(0)
+                    faces_t = torch.as_tensor(smplmodel.faces, dtype=torch.long, device=verts.device)
+                    vertex_normals = compute_normals_torch(verts, faces_t)
+                    smpl_normals_arr.append(vertex_normals.detach().cpu().numpy()) # trimesh vertex_normal (area-weighted) is different from open3d and this torch computed normal (angle-weighted)
+                self.smpl_verts = np.array(smpl_verts_arr)
+                self.smpl_normals = np.array(smpl_normals_arr)
+                # save smpl_normals to dataset
+                self.data['smpl_normals'] = self.smpl_normals
+                self.data['smpl_verts'] = self.smpl_verts
+                np.savez(DATASET_FILES[self.version][dataset], **self.data)
+
+        if 'pred_pc' in self.data:
+            self.pred_pc = self.data['pred_pc']
         else:
-            self.pi3_pc = []
+            self.pred_pc = []
 
         self.length = self.scale.shape[0]
         log.info(f'Loaded {self.dataset} dataset, num samples {self.length}')
@@ -432,48 +462,58 @@ class DatasetTrainTest(Dataset):
         item['betas'] = self.betas[index]
 
         if 'smplx' in self.dataset:
-            if self.gender[index] == 1:
-                model = self.smplx_gt_female
-            elif self.gender[index] == 0:
-                model = self.smplx_gt_male
+            item['smplx'] = True
+        else:
+            item['smplx'] = False
+
+        if self.enable_loading_smpl_verts_and_normals and not self.enable_direct_gpu_process_gt_smpl_verts_and_normals:
+            if 'smplx' in self.dataset:
+                if self.gender[index] == 1:
+                    model = self.smplx_gt_female
+                    model2 = self.smpl_gt_female
+                elif self.gender[index] == 0:
+                    model = self.smplx_gt_male
+                    model2 = self.smpl_gt_male
+                else:
+                    model = self.smplx_gt_neutral
+                    model2 = self.smpl_gt_neutral
             else:
-                model = self.smplx_gt_neutral
+                if self.gender[index] == 1:
+                    model = self.smpl_gt_female
+                elif self.gender[index] == 0:
+                    model = self.smpl_gt_male
+                else:
+                    model = self.smpl_gt_neutral
 
-            gt_smpl_out = model(
-                        global_orient=torch.from_numpy(item['smpl_params']['global_orient']).unsqueeze(0),
-                        body_pose=torch.from_numpy(item['smpl_params']['body_pose']).unsqueeze(0),
-                        betas=torch.from_numpy(item['smpl_params']['betas']).unsqueeze(0))
-            gt_vertices = gt_smpl_out.vertices.detach()
-            gt_vertices = torch.matmul(self.smplx2smpl, gt_vertices)
-            item['keypoints_3d'] = torch.matmul(self.smpl_gt_neutral.J_regressor, gt_vertices[0])
-            item['vertices'] = gt_vertices[0].float()
-            # gt_smpl_normals = gt_smpl_out.normals.detach()
-        else:
-            if self.gender[index] == 1:
-                model = self.smpl_gt_female
-            elif self.gender[index] == 0:
-                model = self.smpl_gt_male
+            gt_vertices = torch.from_numpy(self.smpl_verts[index]).float()
+            if self.enable_loading_smpl_verts_and_normals:
+                item['vertices'] = gt_vertices
+                item['smpl_normals'] = torch.from_numpy(self.smpl_normals[index]).float()
             else:
-                model = self.smpl_gt_neutral
-            gt_smpl_out = model(
-                        global_orient=torch.from_numpy(item['smpl_params']['global_orient']).unsqueeze(0),
-                        body_pose=torch.from_numpy(item['smpl_params']['body_pose']).unsqueeze(0),
-                        betas=torch.from_numpy(item['smpl_params']['betas']).unsqueeze(0))
+                gt_smpl_out = model(
+                            global_orient=torch.from_numpy(item['smpl_params']['global_orient']).unsqueeze(0),
+                            body_pose=torch.from_numpy(item['smpl_params']['body_pose']).unsqueeze(0),
+                            betas=torch.from_numpy(item['smpl_params']['betas']).unsqueeze(0))
+                gt_vertices = gt_smpl_out.vertices.detach()
 
-            gt_vertices = gt_smpl_out.vertices.detach()
-            item['keypoints_3d'] = torch.matmul(model.J_regressor, gt_vertices[0])
-            item['vertices'] = gt_vertices[0].float()
+                item['vertices'] = gt_vertices[0].float()
 
-        if 'smpl_normals' in self.data:
-            item['smpl_normals'] = self.smpl_normals[index]
-        else:
-            item['smpl_normals'] = []
+                smpl_params = {'global_orient': self.pose[index][:3].astype(np.float32),
+                            'body_pose': self.pose[index][3:].astype(np.float32),
+                            'betas': self.betas[index].astype(np.float32)}
 
-        if 'sapiens_normals_path' in self.data:
-            # TODO: check which normal shows best results
-            item['sapiens_normals_path'] = self.sapiens_normals_path_imgmatch[index]
-        else:
-            item['sapiens_normals_path'] = ''
+                verts = gt_vertices.squeeze(0)
+                faces_t = torch.as_tensor(model.faces, dtype=torch.long, device=verts.device)
+                smpl_vertex_normals = compute_normals_torch(verts, faces_t)
+                item['smpl_normals'] = smpl_vertex_normals
+
+            if 'smplx' in self.dataset:
+                gt_vertices = torch.matmul(self.smplx2smpl, gt_vertices)
+                item['keypoints_3d'] = torch.matmul(model2.J_regressor, gt_vertices[0])
+            else:
+                item['keypoints_3d'] = torch.matmul(model.J_regressor, gt_vertices[0])
+
+        item['sapiens_normals_path'] = self.sapiens_normals_path_imgmatch[index]
 
         return item
 
