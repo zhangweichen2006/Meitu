@@ -358,23 +358,21 @@ class CameraHMR(pl.LightningModule):
                 # combine smpl_output_gt_male and smpl_output_gt_female by gender
                 # smpl_shape = self.smpl_gt.vertices.shape # 6890,3?
 
-                smpl_output_gt_vertices = torch.empty((batch_size, 6890, 3), dtype=self.smpl_gt.vertices.dtype, device=batch['gender'].device)
-                smpl_output_gt_vertices[male_gender] = smpl_output_gt_male.vertices
-                smpl_output_gt_vertices[female_gender] = smpl_output_gt_female.vertices
+                smpl_output_gt_vertices = torch.empty(smpl_output_gt_male.vertices.shape, dtype=smpl_output_gt_male.vertices.dtype, device=smpl_output_gt_male.vertices.device)
+                smpl_output_gt_vertices[male_gender] = smpl_output_gt_male.vertices[male_gender]
+                smpl_output_gt_vertices[female_gender] = smpl_output_gt_female.vertices[female_gender]
 
-                smpl_output_joints = smpl_output_gt_male.joints[:,:NUM_JOINTS] 
-                smpl_output_joints[female_gender] = smpl_output_gt_female.joints[:,:NUM_JOINTS]
+                smpl_output_gt_joints = torch.empty(smpl_output_gt_male.joints.shape, dtype=smpl_output_gt_male.joints.dtype, device=smpl_output_gt_male.joints.device)
+                smpl_output_gt_joints[male_gender] = smpl_output_gt_male.joints[:,:NUM_JOINTS][male_gender]
+                smpl_output_gt_joints[female_gender] = smpl_output_gt_female.joints[:,:NUM_JOINTS][female_gender]
 
                 faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=smpl_output_gt_vertices.device)
                 smpl_output_gt_normals = compute_normals_torch(smpl_output_gt_vertices, faces_t)
 
-                smpl_output_gt = smpl_output_gt_male
-                smpl_output_gt[female_gender] = smpl_output_gt_female
-
+                ones = torch.ones((batch_size, NUM_JOINTS, 1),device=self.device)
                 batch['vertices'] = smpl_output_gt_vertices
                 batch['smpl_normals'] = smpl_output_gt_normals
-                ones = torch.ones((batch_size, NUM_JOINTS, 1),device=self.device)
-                batch['keypoints_3d'] = torch.cat((smpl_output_joints, ones), dim=-1)
+                batch['keypoints_3d'] = torch.cat((smpl_output_gt_joints, ones), dim=-1)
             # Calculated in DS get_item / DS init
             # else:
             #     batch['vertices'] = batch['vertices']
@@ -517,7 +515,7 @@ class CameraHMR(pl.LightningModule):
         gt_keypoints_3d = batch['keypoints_3d']
         gt_smpl_params = batch['smpl_params']
         img_size = batch['img_size'].rot90().T.unsqueeze(1)
-
+        # cv2.imwrite("img.png",batch['img_full_resized'][0].permute(1,2,0).detach().cpu().numpy()*255)
         total_loss = 0
 
         # apply gendered mask to the outputs
@@ -537,10 +535,16 @@ class CameraHMR(pl.LightningModule):
             pred_vertices = output['pred_vertices']
 
             # SMPL vertices / point losses
-            loss_keypoints_3d = loss_mask * self.keypoint_3d_loss(pred_keypoints_3d, gt_keypoints_3d, pelvis_id=25+14)
+            loss_keypoints_3d = self.keypoint_3d_loss(pred_keypoints_3d, gt_keypoints_3d, pelvis_id=25+14, loss_mask=loss_mask) # 331
             faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=pred_vertices.device)
-            loss_vertices = loss_mask * self.vertices_loss_l1l2(pred_vertices, batch['vertices'])
-            loss_vertices_pt2plane = loss_mask * self.vertices_loss_p2p(pred_vertices, batch['vertices'], faces_t)
+            loss_vertices = self.vertices_loss_l1l2(pred_vertices, batch['vertices'], loss_mask=loss_mask) # 56795
+            # vis pred_vertices[0]
+            # import open3d as o3d
+            # pc = o3d.geometry.PointCloud()
+            # pc.points = o3d.utility.Vector3dVector(pred_vertices[0].detach().cpu().numpy())
+            # o3d.io.write_point_cloud(f'pred_vertices_{i}.ply', pc)
+
+            loss_vertices_pt2plane = self.vertices_loss_p2p(pred_vertices, batch['vertices'], faces_t, loss_mask=loss_mask) # 20062
 
             # Compute loss on SMPL parameters
             loss_smpl_params = {}
@@ -774,7 +778,7 @@ class CameraHMR(pl.LightningModule):
             if female_indices.any():
                 smpl_output_gt[female_indices] = self.smpl_gt_female(**female_batch).vertices
 
-            gt_cam_vertices =smpl_output_gt
+            gt_cam_vertices = smpl_output_gt
             pred_cam_vertices = gendered_output[0]['pred_vertices']
 
             gt_keypoints_3d = torch.matmul(J_regressor_batch_smpl, gt_cam_vertices)

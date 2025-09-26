@@ -56,7 +56,7 @@ class GenderedSMPLTransformerDecoderHead(nn.Module):
         pred_body_pose = init_body_pose
         pred_betas = init_betas
         pred_cam = init_cam
-
+        
         gendered_pred_smpl_params_list = []
         token = torch.cat([bbox_info, pred_body_pose, pred_betas, pred_cam], dim=1)[:,None,:]
 
@@ -65,14 +65,9 @@ class GenderedSMPLTransformerDecoderHead(nn.Module):
         token_out = token_out.squeeze(1) # (B, C)
 
         for i in range(3):
-
             pred_body_pose_list = []
             pred_betas_list = []
             pred_cam_list = []
-            resid_body_pose6d_list = []
-            resid_betas_list = []
-            resid_cam_list = []
-            resid_kp_list = []
             # Decoder raw residuals
             
             resid_body_pose6d = self.decpose[i](token_out)
@@ -81,9 +76,9 @@ class GenderedSMPLTransformerDecoderHead(nn.Module):
             resid_kp = self.deckp[i](token_out)
 
             # Readout from token_out (absolute, anchored at init means)
-            pred_body_pose = resid_body_pose6d + pred_body_pose.clone() # 1* 144 (6D*24)
-            pred_betas = resid_betas + pred_betas.clone()
-            pred_cam = resid_cam + pred_cam.clone()
+            pred_body_pose = resid_body_pose6d + init_body_pose.clone() # 1* 144 (6D*24)
+            pred_betas = resid_betas + init_betas.clone()
+            pred_cam = resid_cam + init_cam.clone()
             pred_kp = resid_kp
             pred_body_pose_list.append(pred_body_pose)
             pred_betas_list.append(pred_betas)

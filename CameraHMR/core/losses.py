@@ -14,11 +14,13 @@ class Keypoint2DLoss(nn.Module):
         else:
             raise NotImplementedError('Unsupported loss function')
 
-    def forward(self, pred_keypoints_2d: torch.Tensor, gt_keypoints_2d: torch.Tensor) -> torch.Tensor:
+    def forward(self, pred_keypoints_2d: torch.Tensor, gt_keypoints_2d: torch.Tensor, loss_mask: torch.Tensor = None) -> torch.Tensor:
         conf = gt_keypoints_2d[:, :, -1].unsqueeze(-1).clone()
         batch_size = conf.shape[0]
-        loss = (conf * self.loss_fn(pred_keypoints_2d.float(), gt_keypoints_2d[:, :, :-1])).sum(dim=(1,2))
-        return loss.sum()
+        loss_per_sample = (conf * self.loss_fn(pred_keypoints_2d.float(), gt_keypoints_2d[:, :, :-1])).sum(dim=(1,2))
+        if loss_mask is not None:
+            loss_per_sample = loss_per_sample * loss_mask.float()
+        return loss_per_sample.sum()
 
 
 class Keypoint2DLossScaled(nn.Module):
@@ -32,16 +34,15 @@ class Keypoint2DLossScaled(nn.Module):
         else:
             raise NotImplementedError('Unsupported loss function')
 
-    def forward(self, pred_keypoints_2d: torch.Tensor, gt_keypoints_2d: torch.Tensor, box_size, img_size) -> torch.Tensor:
+    def forward(self, pred_keypoints_2d: torch.Tensor, gt_keypoints_2d: torch.Tensor, box_size, img_size, loss_mask: torch.Tensor = None) -> torch.Tensor:
         conf = gt_keypoints_2d[:, :, -1].unsqueeze(-1).clone()
         batch_size = conf.shape[0]
-
         loss = (conf * self.loss_fn(pred_keypoints_2d.float(), gt_keypoints_2d[:, :, :-1]))
-
         loss_scale = (img_size.squeeze(1)/box_size.unsqueeze(-1)).mean(1)
-        loss = (loss*loss_scale.unsqueeze(-1).unsqueeze(-1)).sum(dim=(1,2))
-
-        return loss.sum()
+        loss_per_sample = (loss*loss_scale.unsqueeze(-1).unsqueeze(-1)).sum(dim=(1,2))
+        if loss_mask is not None:
+            loss_per_sample = loss_per_sample * loss_mask.float()
+        return loss_per_sample.sum()
 
 class VerticesLoss(nn.Module):
 
@@ -54,11 +55,13 @@ class VerticesLoss(nn.Module):
         else:
             raise NotImplementedError('Unsupported loss function')
 
-    def forward(self, pred_vertices: torch.Tensor, gt_vertices: torch.Tensor):
+    def forward(self, pred_vertices: torch.Tensor, gt_vertices: torch.Tensor, loss_mask: torch.Tensor = None):
         batch_size = pred_vertices.shape[0]
         gt_vertices = gt_vertices.clone()
-        loss = (self.loss_fn(pred_vertices, gt_vertices)).sum(dim=(1,2))
-        return loss.sum()
+        loss_per_sample = (self.loss_fn(pred_vertices, gt_vertices)).sum(dim=(1,2))
+        if loss_mask is not None:
+            loss_per_sample = loss_per_sample * loss_mask.float()
+        return loss_per_sample.sum()
 
 def compute_vertex_normals(verts: torch.Tensor,
                            faces: torch.Tensor,
@@ -109,7 +112,8 @@ class PointToPlaneLoss(nn.Module):
                 faces: torch.Tensor,          # (F, 3), long
                 gt_normals: torch.Tensor = None,  # optional (B, V, 3) unit normals
                 mask: torch.Tensor = None,        # optional (B, V) boolean/float
-                weights: torch.Tensor = None      # optional (B, V) float
+                weights: torch.Tensor = None,     # optional (B, V) float
+                loss_mask: torch.Tensor = None    # optional (B,) batch mask
                 ) -> torch.Tensor:
 
         # Ensure FP32 for normal math
@@ -138,10 +142,16 @@ class PointToPlaneLoss(nn.Module):
             dist = dist * weights.float()
 
         if self.reduction == "mean":
-            denom = (mask.float().sum() if mask is not None else dist.numel())
-            loss = dist.sum() / (denom + 1e-6)
+            # mean over vertices per-sample, then average across batch (respecting mask)
+            per_sample = dist.mean(dim=-1)
+            if loss_mask is not None:
+                per_sample = per_sample * loss_mask.float()
+            loss = per_sample.sum() / ((loss_mask.float().sum() + 1e-6) if loss_mask is not None else per_sample.numel())
         elif self.reduction == "sum":
-            loss = dist.sum()
+            per_sample = dist.sum(dim=-1)
+            if loss_mask is not None:
+                per_sample = per_sample * loss_mask.float()
+            loss = per_sample.sum()
         else:
             loss = dist  # (B, V)
 
@@ -158,15 +168,17 @@ class Keypoint3DLoss(nn.Module):
         else:
             raise NotImplementedError('Unsupported loss function')
 
-    def forward(self, pred_keypoints_3d: torch.Tensor, gt_keypoints_3d: torch.Tensor, pelvis_id: int = 39):
+    def forward(self, pred_keypoints_3d: torch.Tensor, gt_keypoints_3d: torch.Tensor, pelvis_id: int = 39, loss_mask: torch.Tensor = None):
         batch_size = pred_keypoints_3d.shape[0]
         gt_keypoints_3d = gt_keypoints_3d.clone()
         pred_keypoints_3d = pred_keypoints_3d - pred_keypoints_3d[:, pelvis_id, :].unsqueeze(dim=1)
         gt_keypoints_3d[:, :, :-1] = gt_keypoints_3d[:, :, :-1] - gt_keypoints_3d[:, pelvis_id, :-1].unsqueeze(dim=1)
         conf = gt_keypoints_3d[:, :, -1].unsqueeze(-1).clone()
         gt_keypoints_3d = gt_keypoints_3d[:, :, :-1]
-        loss = (conf * self.loss_fn(pred_keypoints_3d.float(), gt_keypoints_3d)).sum(dim=(1,2))
-        return loss.sum()
+        loss_per_sample = (conf * self.loss_fn(pred_keypoints_3d.float(), gt_keypoints_3d)).sum(dim=(1,2))
+        if loss_mask is not None:
+            loss_per_sample = loss_per_sample * loss_mask.float()
+        return loss_per_sample.sum()
 
 class ParameterLoss(nn.Module):
 
@@ -174,11 +186,13 @@ class ParameterLoss(nn.Module):
         super(ParameterLoss, self).__init__()
         self.loss_fn = nn.MSELoss(reduction='none')
 
-    def forward(self, pred_param: torch.Tensor, gt_param: torch.Tensor):
+    def forward(self, pred_param: torch.Tensor, gt_param: torch.Tensor, loss_mask: torch.Tensor = None):
         batch_size = pred_param.shape[0]
         num_dims = len(pred_param.shape)
         mask_dimension = [batch_size] + [1] * (num_dims-1)
-        loss_param = self.loss_fn(pred_param.float(), gt_param)
+        loss_param = self.loss_fn(pred_param.float(), gt_param).view(batch_size, -1).sum(dim=1)
+        if loss_mask is not None:
+            loss_param = loss_param * loss_mask.float()
         return loss_param.sum()
 
 class TranslationLoss(nn.Module):
@@ -194,10 +208,12 @@ class TranslationLoss(nn.Module):
             raise NotImplementedError('Unsupported loss function')
 
 
-    def forward(self, pred_trans: torch.Tensor, gt_trans: torch.Tensor):
-
-        loss = self.loss_fn(pred_trans, gt_trans)
-        return loss.sum()
+    def forward(self, pred_trans: torch.Tensor, gt_trans: torch.Tensor, loss_mask: torch.Tensor = None):
+        batch_size = pred_trans.shape[0]
+        loss_per_sample = self.loss_fn(pred_trans, gt_trans).view(batch_size, -1).sum(dim=1)
+        if loss_mask is not None:
+            loss_per_sample = loss_per_sample * loss_mask.float()
+        return loss_per_sample.sum()
 
 class SMPLNormalLoss(nn.Module):
 
@@ -208,7 +224,7 @@ class SMPLNormalLoss(nn.Module):
         else:
             raise NotImplementedError('Unsupported loss function')
 
-    def forward(self, pred_vertices: torch.Tensor, gt_vertices: torch.Tensor, faces: torch.Tensor, imgnames=None) -> torch.Tensor:
+    def forward(self, pred_vertices: torch.Tensor, gt_vertices: torch.Tensor, faces: torch.Tensor, imgnames=None, loss_mask: torch.Tensor = None) -> torch.Tensor:
         """
         Compute per-vertex normal loss between predicted and GT SMPL meshes.
 
@@ -259,6 +275,8 @@ class SMPLNormalLoss(nn.Module):
         cos_sim = F.cosine_similarity(pred_normals, gt_normals, dim=-1)  # (B, V)
         per_vertex_loss = 1.0 - cos_sim.abs() # TODO: orientation-agnostic, check later
 
-        # Average over vertices, then sum over batch (match style of other losses)
-        loss = per_vertex_loss.sum(dim=1).sum()
-        return loss
+        # Sum over vertices per-sample, then apply optional batch mask and sum over batch
+        per_sample = per_vertex_loss.sum(dim=1)
+        if loss_mask is not None:
+            per_sample = per_sample * loss_mask.float()
+        return per_sample.sum()
