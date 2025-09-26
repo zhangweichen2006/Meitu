@@ -385,7 +385,7 @@ class CameraHMR(pl.LightningModule):
             if self.use_lora_head and (self.smpl_head_lora is not None):
                 gendered_pred_smpl_params_list_lora = self.smpl_head_lora(conditioning_feats, bbox_info=bbox_info)
             
-            output_gendered = []
+            output_list = []
             # for each gender (0: neutral, 1: male, 2: female)
             for i in range(3):
                 pred_smpl_params, pred_cam, decouts, pred_kp = gendered_pred_smpl_params_list[i]
@@ -478,7 +478,7 @@ class CameraHMR(pl.LightningModule):
                 output['pred_verts2d'] = pred_verts2d
             output['pred_keypoints_2d'] = joints2d.reshape(batch_size, -1, 2)
 
-            output_gendered.append(output)
+            output_list.append(output)
 
         else:
             pred_smpl_params, pred_cam, decouts, pred_kp = self.smpl_head(rgb_feats, bbox_info=bbox_info)
@@ -493,7 +493,7 @@ class CameraHMR(pl.LightningModule):
             output['pred_vertices'] = pred_vertices.reshape(batch_size, -1, 3)
             output['pred_cam'] = pred_cam
             output['pred_smpl_params'] = {k: v.clone() for k,v in pred_smpl_params.items()}
-
+            output_list = [output]
             # import open3d as o3d
             # pc = o3d.geometry.PointCloud()
             # pc.points = o3d.utility.Vector3dVector(pred_vertices[1].detach().cpu().numpy())
@@ -501,7 +501,7 @@ class CameraHMR(pl.LightningModule):
             # pc = o3d.geometry.PointCloud()
             # pc.points = o3d.utility.Vector3dVector(batch['vertices'][1].detach().cpu().numpy())
             # o3d.io.write_point_cloud(f'gt_vertices.ply', pc)
-        return output_gendered, fl_h
+        return output_list, fl_h
 
     def perspective_projection_vis(self, input_batch, output, max_save_img=1):
         import os
