@@ -66,12 +66,13 @@ def resize_image(img, target_size):
     return aspect_ratio, final_img
 
 class HumanMeshEstimator:
-    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False, use_smplify=False, export_init_npz=None, model_path=None, model=None, detector=None, cam_model=None):
+    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.6, same_mesh_color=False, save_smpl_obj=False, use_smplify=False, export_init_npz=None, model_path=None, model=None, detector=None, cam_model=None):
         self.device = (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
         self.model_path = model_path
         self.model = model if model is not None else self.init_model()
         self.detector = detector if detector is not None else self.init_detector(threshold)
         self.cam_model = cam_model if cam_model is not None else self.init_cam_model()
+        self.cam_model = self.cam_model.to(self.device)
         self.smpl_model = smplx.SMPLLayer(model_path=smpl_model_path, num_betas=NUM_BETAS).to(self.device)
         self.normalize_img = Normalize(mean=IMAGE_MEAN, std=IMAGE_STD)
         self.mesh_opacity = mesh_opacity
@@ -158,8 +159,9 @@ class HumanMeshEstimator:
         img_full_resized = np.transpose(img_full_resized.astype('float32'),
                             (2, 0, 1))/255.0
         img_full_resized = self.normalize_img(torch.from_numpy(img_full_resized).float())
-
-        estimated_fov, _ = self.cam_model(img_full_resized.unsqueeze(0).to(self.device))
+        # Ensure tensor and model on same device
+        img_full_resized = img_full_resized.to(self.device)
+        estimated_fov, _ = self.cam_model(img_full_resized.unsqueeze(0))
         vfov = estimated_fov[0, 1]
         fl_h = (img_h / (2 * torch.tan(vfov / 2))).item()
         # fl_h = (img_w * img_w + img_h * img_h) ** 0.5

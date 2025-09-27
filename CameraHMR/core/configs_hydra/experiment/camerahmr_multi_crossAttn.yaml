@@ -44,7 +44,7 @@ MODEL:
       context_dim: 1280 # from vitpose-H
 
   FINETUNE: true # load pretrained camerahmr weights
-  DOUBLE_LORA_SMPL_HEAD: true # load pretrained lora weights
+  LORA_SMPL_HEAD_CLONE: true # load pretrained lora weights
 
   FREEZE_BACKBONE: true
   FREEZE_NORMAL_BACKBONE: false

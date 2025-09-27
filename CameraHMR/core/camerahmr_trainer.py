@@ -231,7 +231,7 @@ class CameraHMR(pl.LightningModule):
         self.validation_step_output = []
 
         # Optional: use detection-based estimator for validation/test rendering
-        self.use_estimator_for_val = bool(getattr(self.cfg.trainer, 'use_estimator_for_val', True))
+        self.run_estimator_after_epoch = bool(getattr(self.cfg.trainer, 'run_estimator_after_epoch', True))
         self._val_estimator = None
 
         class _TrainerModelWrapper:
@@ -246,6 +246,25 @@ class CameraHMR(pl.LightningModule):
         self._model_wrapper_cls = _TrainerModelWrapper
         # Track per-epoch estimator renders to avoid re-running every batch
         self._rendered_epoch_done = set()
+        # Allow skipping val dataloader and running HumanMeshEstimator after each training epoch
+
+    def set_model_mode(self, mode: str):
+        if mode == 'train':
+            self.backbone.train()
+            self.smpl_head.train()
+            self.normal_backbone.train()
+            self.normal_injecter.train()
+            if self.use_lora_head: self.smpl_head_lora.train()
+            self.cam_model.train()
+        elif mode == 'eval':
+            self.backbone.eval()
+            self.smpl_head.eval()
+            self.normal_backbone.eval()
+            self.normal_injecter.eval()
+            if self.use_lora_head: self.smpl_head_lora.eval()
+            self.cam_model.eval()
+        else:
+            raise ValueError(f"Invalid model mode: {mode}")
 
     def load_pretrained(self, ckpt_path: str, subset_modules: List[str] = None, strict: bool = False, decoder_blocks: List[str] = None, duplicate_gendered_heads: bool = False):
         try:
@@ -741,125 +760,21 @@ class CameraHMR(pl.LightningModule):
         } # f"losses_{name}"
         self.log_dict(metric_dict, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
-        return gendered_output[0]
+        # clear cache and free memory
+        if torch.cuda.is_available():
+            try:
+                torch.cuda.synchronize(self.device)
+            except Exception:
+                torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+        gc.collect()
 
+        return gendered_output[0]
 
 
     def validation_step(self, batch: Dict, batch_idx: int, dataloader_idx=0) -> Dict:
 
-        # Render-only path: if no GT annotations present (no 'vertices' and no 'smpl_params'),
-        # just render and save results similar to demo.py
-        if ('vertices' not in batch) and ('smpl_params' not in batch):
-            # 1. MT TEST with RENDERING(No GT)
-            # If no bbox/center/scale provided (e.g., DatasetTest without GT), optionally use HumanMeshEstimator for detection+cropping
-            if self.use_estimator_for_val and (('box_center' not in batch) or (batch['box_center'].abs().sum() == 0) or ('box_size' not in batch)):
-                out_root = getattr(self.cfg.paths, 'output_dir', '.')
-                epoch_idx = int(self.current_epoch) if hasattr(self, 'current_epoch') else 0
-                render_dir = os.path.join(out_root, f"ep_{epoch_idx}")
-                if epoch_idx not in self._rendered_epoch_done:
-                    ds_name0 = batch['dataset'][0] if isinstance(batch['dataset'], (list, tuple)) else str(batch['dataset'])
-                    image_folder = DATASET_FOLDERS.get(ds_name0, None)
-                    if image_folder is None:
-                        # Fallback to deducing from first imgname
-                        first_img = batch['imgname'][0]
-                        image_folder = os.path.dirname(first_img)
-                    os.makedirs(render_dir, exist_ok=True)
-                    if self._val_estimator is None:
-                        model_wrap = self._model_wrapper_cls(self)
-                        self._val_estimator = HumanMeshEstimator(model=model_wrap, cam_model=self.cam_model)
-                    # One-call processing for the whole folder
-                    self._val_estimator.run_on_images(image_folder, render_dir, None)
-                    self._rendered_epoch_done.add(epoch_idx)
-                    # sync GPU and free estimator to avoid leaks
-                    if torch.cuda.is_available():
-                        try:
-                            torch.cuda.synchronize(self.device)
-                        except Exception:
-                            torch.cuda.synchronize()
-                        torch.cuda.empty_cache()
-                    self._val_estimator = None
-                    gc.collect()
-                self.log('val_loss', torch.tensor(0.0, device=self.device), logger=True, sync_dist=True)
-                return {}
-            
-            # 2. VALIDATION BUT NOT USING ESTIMATOR FOR RENDERING (In case HumanMeshEstimator Failed.)
-            # batch_size = batch['img'].shape[0]
-            # with torch.no_grad():
-            #     gendered_output,_ = self.forward_step(batch, train=False)
-            # dataset_names = batch['dataset']
-
-
-            # img_h = batch['img_size'][:,0]
-            # img_w = batch['img_size'][:,1]
-            # device = gendered_output[0]['pred_cam'].device
-            # cam_t = convert_to_full_img_cam(
-            #     pare_cam=gendered_output[0]['pred_cam'],
-            #     bbox_height=batch['box_size'],
-            #     bbox_center=batch['box_center'],
-            #     img_w=img_w,
-            #     img_h=img_h,
-            #     focal_length=batch['cam_int'][:, 0, 0],
-            # )
-
-            # # Output directory per epoch under Hydra output_dir
-            # try:
-            #     out_root = self.cfg.paths.output_dir
-            # except Exception:
-            #     out_root = '.'
-            # epoch_idx = int(self.current_epoch) if hasattr(self, 'current_epoch') else 0
-            # if epoch_idx < 0:
-            #     epoch_idx = 0
-            # render_dir = os.path.join(out_root, f"ep_{epoch_idx}")
-            # os.makedirs(render_dir, exist_ok=True)
-
-            # def _unique_path(base_dir: str, base_name: str) -> str:
-            #     save_path = os.path.join(base_dir, base_name)
-            #     if not os.path.exists(save_path):
-            #         return save_path
-            #     name, ext = os.path.splitext(base_name)
-            #     k = 1
-            #     while True:
-            #         cand = os.path.join(base_dir, f"{name}_{k}{ext}")
-            #         if not os.path.exists(cand):
-            #             return cand
-            #         k += 1
-
-            # # Save renders per image (single overlay image only)
-            # for i in range(batch_size):
-            #     imgname = batch['imgname'][i]
-            #     fname = os.path.basename(imgname)
-            #     save_path = _unique_path(render_dir, fname)
-            #     try:
-            #         base_img = cv2.imread(imgname)
-            #         img01 = base_img / 255.0 if np.max(base_img) > 1 else base_img
-            #         overlay_img = render_overlay_image(
-            #             image=img01,
-            #             camera_translation=cam_t[i].detach().cpu().numpy(),
-            #             vertices=gendered_output[0]['pred_vertices'][i].detach().cpu().numpy(),
-            #             camera_rotation=None,
-            #             focal_length=(float(batch['cam_int'][i,0,0]), float(batch['cam_int'][i,1,1])),
-            #             camera_center=(float(img_w[i]) / 2.0, float(img_h[i]) / 2.0),
-            #             faces=self.smpl_gt.faces,
-            #             alpha=1.0,
-            #             mesh_color='pinkish',
-            #             correct_ori=True,
-            #             sideview_angle=0,
-            #         )
-            #         save_img = np.clip(overlay_img * 255.0, 0, 255).astype(np.uint8)
-            #         cv2.imwrite(save_path, save_img)
-            #     except Exception as e:
-            #         logger.warning(f"Failed to render {imgname}: {e}")
-
-            # # Keep checkpoint callback without computing real val metrics
-            # if torch.cuda.is_available():
-            #     try:
-            #         torch.cuda.synchronize(self.device)
-            #     except Exception:
-            #         torch.cuda.synchronize()
-            #     torch.cuda.empty_cache()
-            # gc.collect()
-            # self.log('val_loss', torch.tensor(0.0, device=self.device), logger=True, sync_dist=True)
-            # return {}
+        # 1. 2 Moved to end of training_epoch_end for mttest  
 
         # 3. ORIGINAL DATASET VALIDATION 
         batch_size = batch['img'].shape[0]
@@ -1079,4 +994,59 @@ class CameraHMR(pl.LightningModule):
         return self.validation_step(batch, batch_idx, dataloader_idx)
 
     def on_test_epoch_end(self):
-        return self.on_validation_epoch_end()
+        return self.on_validation_epoch_end() if not self.run_estimator_after_epoch else None
+
+    def on_train_epoch_start(self):
+        self.set_model_mode('train')
+
+    def on_train_epoch_end(self):
+        # Optionally run HumanMeshEstimator on the entire test folder at the end of each training epoch
+        self.set_model_mode('eval')
+        if not self.run_estimator_after_epoch:
+            return
+        epoch_idx = int(self.current_epoch) if hasattr(self, 'current_epoch') else 0
+        if epoch_idx in self._rendered_epoch_done:
+            return
+        # Only run once on global zero to avoid duplicated work under DDP
+        try:
+            is_rank0 = bool(getattr(self.trainer, 'is_global_zero', True))
+        except Exception:
+            is_rank0 = True
+        if not is_rank0:
+            return
+        # Resolve folders from TEST_DATASETS
+        folders = []
+        try:
+            test_spec = getattr(self.cfg.DATASETS, 'TEST_DATASETS', '') or ''
+        except Exception:
+            test_spec = ''
+        for ds in [d for d in test_spec.split('_') if d]:
+            img_dir = DATASET_FOLDERS.get(ds)
+            if img_dir:
+                folders.append(img_dir)
+        # Fallback: if no TEST_DATASETS provided, skip
+        if len(folders) == 0:
+            return
+        # Output directory per epoch
+        try:
+            out_root = self.cfg.paths.output_dir
+        except Exception:
+            out_root = '.'
+        render_dir = os.path.join(out_root, f"ep_{epoch_idx}")
+        os.makedirs(render_dir, exist_ok=True)
+        # Create estimator once and run
+        if self._val_estimator is None:
+            model_wrap = self._model_wrapper_cls(self)
+            self._val_estimator = HumanMeshEstimator(model=model_wrap, cam_model=self.cam_model)
+        for f in folders:
+            self._val_estimator.run_on_images(f, render_dir, None)
+        self._rendered_epoch_done.add(epoch_idx)
+        # sync and cleanup
+        if torch.cuda.is_available():
+            try:
+                torch.cuda.synchronize(self.device)
+            except Exception:
+                torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+        self._val_estimator = None
+        gc.collect()

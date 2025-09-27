@@ -27,15 +27,17 @@ class DataModule(pl.LightningDataModule):
         if stage == 'train_test':
             self.train_test_dataset = self.train_test_dataset_prepare(**kwargs)
         else:
-            kwargs['is_train'] = True
-            kwargs['version'] = 'traintest'
+            # kwargs['is_train'] = True
+            # kwargs['version'] = 'traintest'
             # kwargs['mean'] = self.cfg.MODEL.IMAGE_MEAN
             # kwargs['std'] = self.cfg.MODEL.IMAGE_STD
             # kwargs['cropsize'] = self.cfg.MODEL.IMAGE_SIZE
             self.train_dataset = self.train_dataset_prepare()
             # Use test dataset(s) for validation stage (render-only flows)
-            self.val_dataset = self.test_dataset_prepare()
-            self.test_dataset = self.test_dataset_prepare()
+            if self.cfg.DATASETS.VAL_DATASETS:
+                self.val_dataset = self.test_dataset_prepare()
+            if self.cfg.DATASETS.TEST_DATASETS and not bool(getattr(self.cfg.trainer, 'run_estimator_after_epoch', True)):
+                self.test_dataset = self.test_dataset_prepare()
 
     def train_dataset_prepare(self):
         if self.cfg.DATASETS.TRAIN_DATASETS:

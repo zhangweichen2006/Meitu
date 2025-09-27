@@ -45,3 +45,10 @@ extras:
   ignore_warnings: false
   enforce_tags: false
   print_config: false
+
+trainer:
+  check_val_every_n_epoch: null   # validate every epoch; set N for every N epochs
+  val_check_interval: null     # disable step-based validation
+  num_sanity_val_steps: 0      # skip sanity val
+  run_initial_validation: True # run initial validation before training starts
+  run_estimator_after_epoch: True # run estimator after each epoch
