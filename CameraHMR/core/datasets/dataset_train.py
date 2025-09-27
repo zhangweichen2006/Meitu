@@ -43,7 +43,7 @@ class DatasetTrain(Dataset):
         self.check_file_completeness_and_filter = cfg.DATASETS.get('check_file_completeness_and_filter', False)
 
         self.img_dir = DATASET_FOLDERS[dataset]
-        self.data = np.load(DATASET_FILES['traintest'][dataset], allow_pickle=True)
+        self.data = np.load(DATASET_FILES[dataset], allow_pickle=True)
 
         self.imgname = self.data['imgname']
 
@@ -88,8 +88,8 @@ class DatasetTrain(Dataset):
                     self.revert_or_regen_sapiens_normals(imgname_to_regenerate,sapiens_normals_path_to_regenerate, sapiens_normals_path_to_regenerate_imgmatch)
         else:
             # process and check folder
-            self.normal_preprocess = NORMAL_PREPROCESS['traintest'][self.dataset]['preprocess']
-            self.normal_swapHW = NORMAL_PREPROCESS['traintest'][self.dataset]['swapHW']
+            self.normal_preprocess = NORMAL_PREPROCESS[self.dataset]['preprocess']
+            self.normal_swapHW = NORMAL_PREPROCESS[self.dataset]['swapHW']
 
             # normal folder path
             sapiens_normals_folder = self.img_dir.replace(self.replace_src_folder, self.sapiens_normal_version) if self.is_train else self.img_dir.replace(self.replace_src_folder, self.sapiens_normal_version)
@@ -114,7 +114,7 @@ class DatasetTrain(Dataset):
             self.data['sapiens_normals_folder'] = (sapiens_normals_folder, sapiens_normals_folder2)
             self.data['normal_swapHW'] = self.normal_swapHW
             self.data['normal_preprocess'] = self.normal_preprocess
-            np.savez(DATASET_FILES['traintest'][dataset], **self.data)
+            np.savez(DATASET_FILES[dataset], **self.data)
 
 
         self.scale = self.data['scale']

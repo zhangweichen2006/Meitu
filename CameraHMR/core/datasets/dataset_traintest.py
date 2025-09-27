@@ -105,8 +105,8 @@ class DatasetTrainTest(Dataset):
                     self.revert_or_regen_sapiens_normals(imgname_to_regenerate,sapiens_normals_path_to_regenerate, sapiens_normals_path_to_regenerate_imgmatch)
         else:
             # process and check folder
-            self.normal_preprocess = NORMAL_PREPROCESS[self.version][self.dataset]['preprocess']
-            self.normal_swapHW = NORMAL_PREPROCESS[self.version][self.dataset]['swapHW']
+            self.normal_preprocess = NORMAL_PREPROCESS[self.dataset]['preprocess']
+            self.normal_swapHW = NORMAL_PREPROCESS[self.dataset]['swapHW']
 
             # normal folder path
             sapiens_normals_folder = self.img_dir.replace(self.replace_src_folder, self.sapiens_normal_version) if self.is_train else self.img_dir.replace(self.replace_src_folder, self.sapiens_normal_version)
@@ -131,7 +131,7 @@ class DatasetTrainTest(Dataset):
             self.data['sapiens_normals_folder'] = (sapiens_normals_folder, sapiens_normals_folder2)
             self.data['normal_swapHW'] = self.normal_swapHW
             self.data['normal_preprocess'] = self.normal_preprocess
-            np.savez(DATASET_FILES[self.version][dataset], **self.data)
+            np.savez(DATASET_FILES[dataset], **self.data)
 
         self.scale = self.data['scale']
         self.center = self.data['center']
@@ -254,7 +254,7 @@ class DatasetTrainTest(Dataset):
                 # save smpl_normals to dataset
                 self.data['smpl_normals'] = self.smpl_normals
                 self.data['smpl_verts'] = self.smpl_verts
-                np.savez(DATASET_FILES[self.version][dataset], **self.data)
+                np.savez(DATASET_FILES[dataset], **self.data)
 
         if 'pred_pc' in self.data:
             self.pred_pc = self.data['pred_pc']
