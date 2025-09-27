@@ -12,12 +12,11 @@ from .dataset_wai import DatasetWAI
 
 class DataModule(pl.LightningDataModule):
 
-    def __init__(self, cfg: CfgNode, dataset_cfg: CfgNode, device='cuda') -> None:
+    def __init__(self, cfg: CfgNode, dataset_cfg: CfgNode) -> None:
 
         super().__init__()
         self.cfg = cfg
         self.dataset_cfg = dataset_cfg
-        self.device = device
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
@@ -29,19 +28,16 @@ class DataModule(pl.LightningDataModule):
         else:
             kwargs['is_train'] = True
             kwargs['version'] = 'traintest'
-            kwargs['device'] = self.device
-            kwargs['mean'] = self.cfg.MODEL.IMAGE_MEAN
-            kwargs['std'] = self.cfg.MODEL.IMAGE_STD
+            # kwargs['mean'] = self.cfg.MODEL.IMAGE_MEAN
+            # kwargs['std'] = self.cfg.MODEL.IMAGE_STD
             # kwargs['cropsize'] = self.cfg.MODEL.IMAGE_SIZE
-            self.train_dataset = self.train_test_dataset_prepare(**kwargs)
-            if self.cfg.DATASETS.VAL_DATASETS:
-                kwargs['is_train'] = False
-                kwargs['version'] = 'traintest'
-                self.val_dataset = self.train_test_dataset_prepare(**kwargs)
-            else:
-                self.val_dataset = None
+            self.train_dataset = self.train_dataset_prepare()
+            # self.train_dataset = self.train_test_dataset_prepare(**kwargs)
+            # kwargs['is_train'] = False
+            # kwargs['version'] = 'traintest'
+            # self.val_dataset = self.train_test_dataset_prepare(**kwargs)
             # self.train_dataset = self.train_dataset_prepare()
-            # self.val_dataset = self.val_dataset_prepare()
+            self.val_dataset = self.val_dataset_prepare()
 
     def train_dataset_prepare(self):
         if self.cfg.DATASETS.TRAIN_DATASETS:
@@ -109,12 +105,6 @@ class DataModule(pl.LightningDataModule):
             (DatasetWAI(self.cfg, ds, **kwargs) if ds.startswith('wai:') else DatasetTrainTest(self.cfg, ds, **kwargs))
             for ds in valid_datasets
         ]
-        # For training, return a single concatenated dataset so that DataLoader sees samples, not datasets
-        if kwargs['is_train']:
-            if len(dataset_list) == 0:
-                raise ValueError("No valid training datasets found. Check DATASETS.TRAIN_DATASETS, DATASET_FOLDERS/DATASET_FILES, or disable filtering.")
-            return torch.utils.data.ConcatDataset(dataset_list)
-        # For validation, return list so we create one DataLoader per dataset
         return dataset_list
 
     def train_dataloader(self):

@@ -22,7 +22,6 @@ from ..sapiens_normal_model import SapiensNormalWrapper
 from SapiensLite.demo.adhoc_image_dataset import AdhocImageDataset
 from SapiensLite.demo.vis_normal import get_preprocess_args, inference_model, load_model
 from SapiensLite.demo.revert_utils import revert_npy
-import ast
 from tqdm import tqdm
 import torch.nn.functional as F
 

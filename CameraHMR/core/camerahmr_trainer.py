@@ -98,7 +98,11 @@ class CameraHMR(pl.LightningModule):
         # Normal backbone feature extractor (for normal modality)
         self.normal_backbone = create_backbone()
         if not self.cfg.MODEL.FINETUNE:
+            # load Pretrained Backbone weights
             self.normal_backbone.load_state_dict(torch.load(VITPOSE_BACKBONE, map_location='cpu', weights_only=True)['state_dict'])
+        else:
+            # duplicate from RGB modality
+            self.normal_backbone.load_state_dict(self.backbone.state_dict())
 
         # Optional cross-attention normal injecter
         self.normal_injecter = None
@@ -422,63 +426,63 @@ class CameraHMR(pl.LightningModule):
                 pred_smpl_params['body_pose'] = pred_smpl_params['body_pose'].reshape(batch_size, -1, 3, 3)
                 pred_smpl_params['betas'] = pred_smpl_params['betas'].reshape(batch_size, -1)
 
-            # ADDITIONALLY USE GENDER INFO TO PREDICT THE SMPL MODELS and BETTER USE FOR SMPL GT
-            smpl_output = self.gendered_smpl_layers[i](**{k: v.float() for k,v in pred_smpl_params.items()}, pose2rot=False)
+                # ADDITIONALLY USE GENDER INFO TO PREDICT THE SMPL MODELS and BETTER USE FOR SMPL GT
+                smpl_output = self.gendered_smpl_layers[i](**{k: v.float() for k,v in pred_smpl_params.items()}, pose2rot=False)
 
-            pred_keypoints_3d = smpl_output.joints
-            pred_vertices = smpl_output.vertices
-            output = {}
+                pred_keypoints_3d = smpl_output.joints
+                pred_vertices = smpl_output.vertices
+                output = {}
 
-            output['pred_keypoints_3d'] = pred_keypoints_3d.reshape(batch_size, -1, 3)
-            output['pred_vertices'] = pred_vertices.reshape(batch_size, -1, 3)
-            # Compute predicted SMPL vertex normals (B, V, 3)
-            # faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=pred_vertices.device)
-            # try:
-            #     output['pred_vertex_normals'] = compute_normals_torch(output['pred_vertices'], faces_t)
-            # except Exception:
-            #     # Keep training robust if faces/normals computation fails for some reason
-            #     logger.warning(f"Failed to compute predicted SMPL vertex normals for batch:{batch['imgname']}.")
-            #     output['pred_vertex_normals'] = None
+                output['pred_keypoints_3d'] = pred_keypoints_3d.reshape(batch_size, -1, 3)
+                output['pred_vertices'] = pred_vertices.reshape(batch_size, -1, 3)
+                # Compute predicted SMPL vertex normals (B, V, 3)
+                # faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=pred_vertices.device)
+                # try:
+                #     output['pred_vertex_normals'] = compute_normals_torch(output['pred_vertices'], faces_t)
+                # except Exception:
+                #     # Keep training robust if faces/normals computation fails for some reason
+                #     logger.warning(f"Failed to compute predicted SMPL vertex normals for batch:{batch['imgname']}.")
+                #     output['pred_vertex_normals'] = None
 
-            # Store useful regression outputs to the output dict
-            output['pred_cam'] = pred_cam
-            output['pred_smpl_params'] = {k: v.clone() for k,v in pred_smpl_params.items()}
+                # Store useful regression outputs to the output dict
+                output['pred_cam'] = pred_cam
+                output['pred_smpl_params'] = {k: v.clone() for k,v in pred_smpl_params.items()}
 
-            # Compute camera translation
-            device = pred_smpl_params['body_pose'].device
-            dtype = pred_smpl_params['body_pose'].dtype
+                # Compute camera translation
+                device = pred_smpl_params['body_pose'].device
+                dtype = pred_smpl_params['body_pose'].dtype
 
-            cam_t = convert_to_full_img_cam(
-                pare_cam=output['pred_cam'],
-                bbox_height=batch['box_size'],
-                bbox_center=batch['box_center'],
-                img_w=img_w,
-                img_h=img_h,
-                focal_length=batch['cam_int'][:, 0, 0],
-            )
+                cam_t = convert_to_full_img_cam(
+                    pare_cam=output['pred_cam'],
+                    bbox_height=batch['box_size'],
+                    bbox_center=batch['box_center'],
+                    img_w=img_w,
+                    img_h=img_h,
+                    focal_length=batch['cam_int'][:, 0, 0],
+                )
 
-            output['pred_cam_t'] = cam_t
+                output['pred_cam_t'] = cam_t
 
-            ## 2D Joints Projection
-            joints2d = perspective_projection(
-                output['pred_keypoints_3d'],
-                rotation=torch.eye(3, device=device).unsqueeze(0).expand(batch_size, -1, -1),
-                translation=cam_t,
-                cam_intrinsics=batch['cam_int'],
-            )
-            if self.cfg.LOSS_WEIGHTS['VERTS2D'] or self.cfg.LOSS_WEIGHTS['VERTS2D_CROP'] or self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM']:
-                pred_verts_subsampled = self.downsample_mat.matmul(output['pred_vertices'])
-
-                pred_verts2d = perspective_projection(
-                    pred_verts_subsampled,
+                ## 2D Joints Projection
+                joints2d = perspective_projection(
+                    output['pred_keypoints_3d'],
                     rotation=torch.eye(3, device=device).unsqueeze(0).expand(batch_size, -1, -1),
                     translation=cam_t,
                     cam_intrinsics=batch['cam_int'],
                 )
-                output['pred_verts2d'] = pred_verts2d
-            output['pred_keypoints_2d'] = joints2d.reshape(batch_size, -1, 2)
+                if self.cfg.LOSS_WEIGHTS['VERTS2D'] or self.cfg.LOSS_WEIGHTS['VERTS2D_CROP'] or self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM']:
+                    pred_verts_subsampled = self.downsample_mat.matmul(output['pred_vertices'])
 
-            output_list.append(output)
+                    pred_verts2d = perspective_projection(
+                        pred_verts_subsampled,
+                        rotation=torch.eye(3, device=device).unsqueeze(0).expand(batch_size, -1, -1),
+                        translation=cam_t,
+                        cam_intrinsics=batch['cam_int'],
+                    )
+                    output['pred_verts2d'] = pred_verts2d
+                output['pred_keypoints_2d'] = joints2d.reshape(batch_size, -1, 2)
+
+                output_list.append(output)
 
         else:
             pred_smpl_params, pred_cam, decouts, pred_kp = self.smpl_head(rgb_feats, bbox_info=bbox_info)
