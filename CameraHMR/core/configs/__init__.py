@@ -5,6 +5,7 @@ curr_dir = os.path.abspath(os.path.dirname(__file__))
 base_dir = os.path.join(curr_dir, '../../')
 DATASET_FOLDERS = {
     'mttest': os.path.join(base_dir, 'data/test-images/mttest-images'),
+    'mttest_local': os.path.join(base_dir, 'data/test-images/mttest-images-local'),
     '3dpw-test-cam-smpl': os.path.join(base_dir, 'data/test-images/3DPW'),
     'coco-val-smpl': os.path.join(base_dir, 'data/test-images/COCO2017/images/'),
     'emdb-smpl': os.path.join(base_dir, 'data/test-images/EMDB'),
@@ -65,6 +66,7 @@ SAPIENS_TEST_PROCESS_NORMAL_VERSION2 = 'test-images-sapiens-normals-DirectResize
 # NEEDED FOR INVERSE NORMAL PROCESSING
 NORMAL_PREPROCESS = {
     'mttest':{'preprocess':'resize', 'swapHW': False},
+    'mttest_local':{'preprocess':'resize', 'swapHW': False},
     '3dpw-test-cam-smpl':{'preprocess':'resize', 'swapHW': False},
     'emdb-smpl':{'preprocess':'resize', 'swapHW': False},
     'rich-smplx':{'preprocess':'resize', 'swapHW': False},
@@ -111,6 +113,7 @@ NORMAL_PREPROCESS = {
 
 DATASET_FILES = {
     'mttest': '',
+    'mttest_local': '',
     '3dpw-test-cam-smpl': os.path.join(base_dir, 'data/training-labels-aug/3dpw_test.npz'),
     'emdb-smpl': os.path.join(base_dir, 'data/training-labels-aug/emdb_test.npz'),
     'rich-smplx': os.path.join(base_dir, 'data/training-labels-aug/rich_test.npz'),

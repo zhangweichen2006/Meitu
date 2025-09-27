@@ -3,5 +3,5 @@
 DATASETS:
   TRAIN_DATASETS: 'closeup-suburba-bbox44'
   VAL_DATASETS: ''
-  TEST_DATASETS: 'mttest'
+  TEST_DATASETS: 'mttest_local'
   #_3dpw-test-cam-smpl_rich-smplx_coco-val-smpl _aic  zoom-suburbd-bbox44_ _3dpw-test-cam-smpl _closeup-suburbb-bbox44_closeup-suburbc-bbox44_closeup-suburbd-bbox44_closeup-gym-bbox44_closeup-suburbb-bmi-bbox44_closeup-suburbc-bmi-bbox44 _mpii-train

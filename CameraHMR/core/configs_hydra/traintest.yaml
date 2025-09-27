@@ -51,4 +51,4 @@ trainer:
   val_check_interval: null     # disable step-based validation
   num_sanity_val_steps: 0      # skip sanity val
   run_initial_validation: True # run initial validation before training starts
-  run_estimator_after_epoch: True # run estimator after each epoch
+  run_estimator_after_epoch: True # run estimator after each epoch (mimic demo.py)
