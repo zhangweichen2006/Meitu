@@ -86,7 +86,7 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
             val_check_interval=cfg.trainer.val_check_interval,
             check_val_every_n_epoch=(cfg.trainer.check_val_every_n_epoch if hasattr(cfg.trainer, 'check_val_every_n_epoch') else 1),
             limit_val_batches=(cfg.trainer.limit_val_batches if hasattr(cfg.trainer, 'limit_val_batches') else 1.0),
-            num_sanity_val_steps=(cfg.trainer.num_sanity_val_steps if hasattr(cfg.trainer, 'num_sanity_val_steps') else 2),
+            num_sanity_val_steps=(cfg.trainer.num_sanity_val_steps if hasattr(cfg.trainer, 'num_sanity_val_steps') else 0),
             precision=cfg.trainer.precision,
             max_steps=cfg.trainer.max_steps,
             logger=loggers,
@@ -117,6 +117,10 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
         ckpt_path = cfg.ckpt_path
     elif getattr(cfg.GENERAL, 'RESUME', False):
         ckpt_path = 'last'
+
+    # Optional: run a full validation pass before training starts (epoch 0 renders)
+    if getattr(cfg.trainer, 'run_initial_validation', True):
+        trainer.validate(model, datamodule=datamodule, ckpt_path=ckpt_path)
 
     trainer.fit(model, datamodule=datamodule, ckpt_path=ckpt_path)
 

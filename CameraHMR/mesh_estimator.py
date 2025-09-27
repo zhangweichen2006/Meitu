@@ -66,12 +66,12 @@ def resize_image(img, target_size):
     return aspect_ratio, final_img
 
 class HumanMeshEstimator:
-    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False, use_smplify=False, export_init_npz=None, model_path=None):
+    def __init__(self, smpl_model_path=SMPL_MODEL_PATH, threshold=0.25, mesh_opacity=0.3, same_mesh_color=False, save_smpl_obj=False, use_smplify=False, export_init_npz=None, model_path=None, model=None, detector=None, cam_model=None):
         self.device = (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
         self.model_path = model_path
-        self.model = self.init_model()
-        self.detector = self.init_detector(threshold)
-        self.cam_model = self.init_cam_model()
+        self.model = model if model is not None else self.init_model()
+        self.detector = detector if detector is not None else self.init_detector(threshold)
+        self.cam_model = cam_model if cam_model is not None else self.init_cam_model()
         self.smpl_model = smplx.SMPLLayer(model_path=smpl_model_path, num_betas=NUM_BETAS).to(self.device)
         self.normalize_img = Normalize(mean=IMAGE_MEAN, std=IMAGE_STD)
         self.mesh_opacity = mesh_opacity
@@ -159,7 +159,7 @@ class HumanMeshEstimator:
                             (2, 0, 1))/255.0
         img_full_resized = self.normalize_img(torch.from_numpy(img_full_resized).float())
 
-        estimated_fov, _ = self.cam_model(img_full_resized.unsqueeze(0))
+        estimated_fov, _ = self.cam_model(img_full_resized.unsqueeze(0).to(self.device))
         vfov = estimated_fov[0, 1]
         fl_h = (img_h / (2 * torch.tan(vfov / 2))).item()
         # fl_h = (img_w * img_w + img_h * img_h) ** 0.5
@@ -170,7 +170,14 @@ class HumanMeshEstimator:
     def remove_pelvis_rotation(self, smpl):
         """We don't trust the body orientation coming out of bedlam_cliff, so we're just going to zero it out."""
         smpl.body_pose[0][0][:] = np.zeros(3)
-
+    
+    def print_state_dict(self):
+        print(self.model.__dict__['trainer_ref'].backbone.state_dict())
+        print(self.model.__dict__['trainer_ref'].smpl_head.state_dict())
+        print(self.cam_model.state_dict())
+        print(self.detector.state_dict())
+        print(self.smpl_model.state_dict())
+        print(self.densekp_model.state_dict())
 
     def _process_and_render(self, img_cv2, dataset_imglabel, overlay_fname, mesh_fname):
         """Shared pipeline used by both image and video frames.
@@ -201,6 +208,11 @@ class HumanMeshEstimator:
             img_h, img_w = batch['img_size'][0]
             with torch.no_grad():
                 out_smpl_params, out_cam, focal_length_ = self.model(batch)
+
+            if self.model.cfg.MODEL.SMPL_HEAD.TYPE == 'transformer_decoder_gendered':
+                out_smpl_params = out_smpl_params[0]
+                out_cam = out_cam[0]
+                focal_length_ = focal_length_[0]
 
             output_vertices, output_joints, output_cam_trans = self.get_output_mesh(out_smpl_params, out_cam, batch)
 

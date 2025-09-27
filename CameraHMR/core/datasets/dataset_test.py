@@ -47,7 +47,9 @@ class DatasetTest(Dataset):
             for root, dirs, files in os.walk(self.img_dir):
                 for file in files:
                     if file.endswith('.jpg') or file.endswith('.png'):
-                        self.imgname.append(os.path.join(root, file))
+                        abs_path = os.path.join(root, file)
+                        rel_path = os.path.relpath(abs_path, self.img_dir)
+                        self.imgname.append(rel_path)
             self.imgname = np.array(self.imgname).tolist()
 
         else:
@@ -123,8 +125,12 @@ class DatasetTest(Dataset):
         # Scalar/meta fields
         if 'scale' in self.data:
             self.scale = self.data['scale']
+        else:
+            self.scale = np.ones((len(self.imgname)), dtype=np.float32)
         if 'center' in self.data:
             self.center = self.data['center']
+        else:
+            self.center = np.zeros((len(self.imgname), 2), dtype=np.float32)
         if 'gtkps' in self.data:
             self.keypoints = self.data['gtkps'][:, :NUM_JOINTS]
         elif 'part' in self.data:
@@ -148,25 +154,33 @@ class DatasetTest(Dataset):
         except KeyError:
             self.gender = -1 * np.ones(len(self.imgname)).astype(np.int32)
 
-        self.length = self.gender.shape[0]
+        self.length = len(self.imgname)
         log.info(f'Loaded {self.dataset} dataset, num samples {self.length}')
 
     def __getitem__(self, index):
         item = {}
-        scale = self.scale[index].copy()
-        center = self.center[index].copy()
-        keypoints_2d = self.keypoints[index].copy()
-        orig_keypoints_2d = self.keypoints[index].copy()
-        center_x = center[0]
-        center_y = center[1]
+        imgname = os.path.join(self.img_dir, self.imgname[index])
+        cv_img = cv2.imread(imgname, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+        cv_img = cv_img[:, :, ::-1]
+        img_h0, img_w0 = cv_img.shape[:2]
+
+        # Derive center/scale when GT meta is missing
+        if hasattr(self, 'center'):
+            center = self.center[index].copy()
+        else:
+            center = np.array([img_w0 / 2.0, img_h0 / 2.0], dtype=np.float32)
+        if hasattr(self, 'scale'):
+            scale = self.scale[index].copy()
+        else:
+            # scale*200 ≈ bbox size; use max side
+            scale = max(img_w0, img_h0) / 200.0
+        center_x = float(center[0])
+        center_y = float(center[1])
         bbox_size = expand_to_aspect_ratio(scale * 200, target_aspect_ratio=self.BBOX_SHAPE).max()
         if bbox_size < 1:
             breakpoint()
 
         augm_config = copy.deepcopy(self.cfg.DATASETS.CONFIG)
-        imgname = os.path.join(self.img_dir, self.imgname[index])
-        cv_img = cv2.imread(imgname, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
-        cv_img = cv_img[:, :, ::-1]
         aspect_ratio, img_full_resized = resize_image(cv_img, 256)
         img_full_resized = np.transpose(img_full_resized.astype('float32'), (2, 0, 1)) / 255.0
         item['img_full_resized'] = self.normalize_img(torch.from_numpy(img_full_resized).float())
@@ -176,14 +190,17 @@ class DatasetTest(Dataset):
         if self.enable_normals:
             normal_path_arg = self.sapiens_normals_path_imgmatch[index]
 
+        # Minimal keypoints for geometry helpers (zeros)
+        dummy_kps = np.zeros((NUM_JOINTS, 3), dtype=np.float32)
+
         img_patch_rgba, \
         img_patch_cv, \
-        keypoints_2d, \
+        _, \
         img_size, cx, cy, bbox_w, bbox_h, trans, scale_aug, normal_patch = get_example(
             imgname,
             center_x, center_y,
             bbox_size, bbox_size,
-            keypoints_2d,
+            dummy_kps,
             FLIP_KEYPOINT_PERMUTATION,
             self.IMG_SIZE, self.IMG_SIZE,
             self.MEAN, self.STD, self.is_train, augm_config,
@@ -210,8 +227,6 @@ class DatasetTest(Dataset):
         item['img_disp'] = img_patch_cv
         if self.enable_normals and normal_patch is not None:
             item['normal'] = normal_patch
-        item['keypoints_2d'] = keypoints_2d.astype(np.float32)
-        item['orig_keypoints_2d'] = orig_keypoints_2d
         item['box_center'] = new_center
         item['box_size'] = bbox_w * scale_aug
         item['img_size'] = 1.0 * img_size.copy()
@@ -219,7 +234,6 @@ class DatasetTest(Dataset):
         item['_trans'] = trans
         item['imgname'] = imgname
         item['dataset'] = self.dataset
-        item['gender'] = self.gender[index]
         return item
 
     def __len__(self):
