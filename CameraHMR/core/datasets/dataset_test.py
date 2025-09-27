@@ -9,7 +9,7 @@ import numpy as np
 from torch.utils.data import Dataset
 from ..utils.pylogger import get_pylogger
 from ..configs import DATASET_FOLDERS, DATASET_FILES, SAPIENS_TRAINING_PROCESS_NORMAL_VERSION, SAPIENS_TEST_PROCESS_NORMAL_VERSION, SAPIENS_TRAINING_PROCESS_NORMAL_VERSION2, SAPIENS_TEST_PROCESS_NORMAL_VERSION2, SAPIENS_TRAINING_IMGMATCH_NORMAL_VERSION, SAPIENS_TEST_IMGMATCH_NORMAL_VERSION, NORMAL_PREPROCESS
-from .utils import expand_to_aspect_ratio, get_example, resize_image
+from .utils import expand_to_aspect_ratio, get_example, resize_image, revert_or_regen_sapiens_normals
 from torchvision.transforms import Normalize
 from ..constants import FLIP_KEYPOINT_PERMUTATION, NUM_JOINTS
 
@@ -17,13 +17,14 @@ log = get_pylogger(__name__)
 
 
 class DatasetTest(Dataset):
-    def __init__(self, cfg, dataset, is_train=False, version='test'):
+    def __init__(self, cfg, dataset, is_train=False, version='test', device='cuda'):
         super(DatasetTest, self).__init__()
 
         self.dataset = dataset
         self.is_train = is_train
         self.version = version
         self.cfg = cfg
+        self.device = device
         self.IMG_SIZE = cfg.MODEL.IMAGE_SIZE
         self.BBOX_SHAPE = cfg.MODEL.get('BBOX_SHAPE', None)
         self.MEAN = 255. * np.array(cfg.MODEL.IMAGE_MEAN)
@@ -40,7 +41,7 @@ class DatasetTest(Dataset):
 
         self.img_dir = DATASET_FOLDERS[dataset]
         # if self.data not exists
-        if not os.path.exists(DATASET_FILES[version][dataset]):
+        if not os.path.exists(DATASET_FILES[dataset]):
             self.data = {}
             self.imgname = []
             for root, dirs, files in os.walk(self.img_dir):
@@ -50,7 +51,7 @@ class DatasetTest(Dataset):
             self.imgname = np.array(self.imgname).tolist()
 
         else:
-            self.data = np.load(DATASET_FILES[version][dataset], allow_pickle=True)
+            self.data = np.load(DATASET_FILES[dataset], allow_pickle=True)
             self.imgname = self.data['imgname']
 
         # Resolve normal paths (test uses processed and imgmatch variants)
@@ -84,17 +85,46 @@ class DatasetTest(Dataset):
         self.sapiens_normals_path2 = [self.img_to_normals_path(i, self.replace_src_folder, self.sapiens_normal_version2) for i in self.img_paths]
         self.sapiens_normals_path_imgmatch = [self.img_to_normals_path(i, self.replace_src_folder, self.sapiens_normal_imgmatch_version) for i in self.img_paths]
 
-        # Enable normal modality only if normals exist for all samples (to keep batch collation safe)
+        # Ensure normals exist; if missing, try revert or regenerate using shared utils
         normals_exist_mask = np.array([os.path.isfile(p) for p in self.sapiens_normals_path_imgmatch]) if len(self.sapiens_normals_path_imgmatch) > 0 else np.zeros(len(self.img_paths), dtype=bool)
+        if not normals_exist_mask.all():
+            num_missing = int((~normals_exist_mask).sum())
+            log.warning(f"{self.dataset}: {num_missing} missing normals detected. Attempting revert/regeneration...")
+            img_to_fix = np.array(self.img_paths)[~normals_exist_mask].tolist()
+            normals_imgmatch_to_fix = np.array(self.sapiens_normals_path_imgmatch)[~normals_exist_mask].tolist()
+            # best-effort: call revert/regenerate
+            try:
+                revert_or_regen_sapiens_normals(
+                    img_to_fix,
+                    sapiens_normals_path_to_regenerate=[],
+                    sapiens_normals_path_to_regenerate_imgmatch=normals_imgmatch_to_fix,
+                    sapiens_normals_path=self.sapiens_normals_path,
+                    sapiens_normals_path2=self.sapiens_normals_path2,
+                    replace_src_folder=self.replace_src_folder,
+                    sapiens_normal_version=self.sapiens_normal_version,
+                    sapiens_normal_version2=self.sapiens_normal_version2,
+                    normal_swapHW=self.normal_swapHW,
+                    normal_preprocess=self.normal_preprocess,
+                    log=log,
+                    dataset=self.dataset,
+                    cfg=self.cfg,
+                    device=getattr(self, 'device', 'cuda'),
+                )
+            except Exception as e:
+                log.warning(f"{self.dataset}: revert/regenerate failed with error: {e}")
+            # re-check after attempt
+            normals_exist_mask = np.array([os.path.isfile(p) for p in self.sapiens_normals_path_imgmatch]) if len(self.sapiens_normals_path_imgmatch) > 0 else np.zeros(len(self.img_paths), dtype=bool)
         self.enable_normals = bool(normals_exist_mask.all())
         if not self.enable_normals:
             missing = int((~normals_exist_mask).sum())
             if missing > 0:
-                log.warning(f"{self.dataset}: normals missing for {missing} samples. Disabling normal modality for DatasetTest.")
+                log.warning(f"{self.dataset}: normals still missing for {missing} samples. Proceeding without normals.")
 
         # Scalar/meta fields
-        self.scale = self.data['scale']
-        self.center = self.data['center']
+        if 'scale' in self.data:
+            self.scale = self.data['scale']
+        if 'center' in self.data:
+            self.center = self.data['center']
         if 'gtkps' in self.data:
             self.keypoints = self.data['gtkps'][:, :NUM_JOINTS]
         elif 'part' in self.data:
@@ -118,7 +148,7 @@ class DatasetTest(Dataset):
         except KeyError:
             self.gender = -1 * np.ones(len(self.imgname)).astype(np.int32)
 
-        self.length = self.scale.shape[0]
+        self.length = self.gender.shape[0]
         log.info(f'Loaded {self.dataset} dataset, num samples {self.length}')
 
     def __getitem__(self, index):

@@ -58,7 +58,7 @@ class DatasetTrainTest(Dataset):
         }[cfg.DATASETS.get('BORDER_MODE', 'constant')]
 
         self.img_dir = DATASET_FOLDERS[dataset]
-        self.data = np.load(DATASET_FILES[version][dataset], allow_pickle=True)
+        self.data = np.load(DATASET_FILES[dataset], allow_pickle=True)
         self.data = {k: v for k, v in self.data.items()}
         self.imgname = self.data['imgname'].tolist()
 

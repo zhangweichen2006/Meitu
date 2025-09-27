@@ -7,7 +7,117 @@ import random
 import cv2
 from typing import List, Dict, Tuple
 from yacs.config import CfgNode
+from SapiensLite.demo.adhoc_image_dataset import AdhocImageDataset
 from SapiensLite.demo.revert_utils import revert_npy
+from SapiensLite.demo.vis_normal import get_preprocess_args, inference_model, load_model
+from SapiensLite.demo.revert_utils import revert_npy
+from tqdm import tqdm
+
+# Helper to map an image path to the best available normals file path
+def _map_to_normals_path(img_path, replace_src, replace_tgt, replace_tgt2):
+    # Prefer first folder, fall back to second; try .npz then .npy
+    base1 = os.path.normpath(img_path.replace(replace_src, replace_tgt))
+    root1, _ = os.path.splitext(base1)
+    cand1_npy = root1 + '.npy'
+    if os.path.isfile(cand1_npy):
+        return cand1_npy
+    # Try second folcand1_npyder if provided
+    base2 = os.path.normpath(img_path.replace(replace_src, replace_tgt2))
+    root2, _ = os.path.splitext(base2)
+    cand2_npy = root2 + '.npy'
+    if os.path.isfile(cand2_npy):
+        # print(f"copying {cand2_npy} to {cand1_npy} to use later...")
+        # os.system(f"cp {cand2_npy} {cand1_npy} &")
+        return cand2_npy
+    # Default to first candidate with .npz extension
+    return None
+
+def img_to_normals_path(img_path, replace_src, replace_tgt):
+    base1 = os.path.normpath(img_path.replace(replace_src, replace_tgt))
+    root1, _ = os.path.splitext(base1)
+    return root1 + '.npy'
+
+def revert_or_regen_sapiens_normals(imgname_to_regenerate, sapiens_normals_path_to_regenerate, sapiens_normals_path_to_regenerate_imgmatch, sapiens_normals_path, sapiens_normals_path2, replace_src_folder, sapiens_normal_version, sapiens_normal_version2, normal_swapHW, normal_preprocess, log, dataset, cfg=None, device=None):
+    valid_paths_sapiens_normals = []
+    # use normal path 2 and copy to normal path 1
+    for idx, i in enumerate(imgname_to_regenerate):
+        if not os.path.isfile(sapiens_normals_path_to_regenerate_imgmatch[idx]):
+            map_normal_path = _map_to_normals_path(i, replace_src_folder, sapiens_normal_version, sapiens_normal_version2)
+            if map_normal_path:
+                # revert imgmatch normal from processed normal
+                log.info(f"Reverting imgmatch normal from {map_normal_path}")
+                rev_normal_imgmatch = revert_npy(map_normal_path, imgname_to_regenerate[idx], swapHW=normal_swapHW, mode=normal_preprocess)
+                os.makedirs(os.path.dirname(sapiens_normals_path_to_regenerate_imgmatch[idx]), exist_ok=True)
+                np.save(sapiens_normals_path_to_regenerate_imgmatch[idx], rev_normal_imgmatch)
+                valid_paths_sapiens_normals.append(True)
+                cv2.imwrite(sapiens_normals_path_to_regenerate_imgmatch[idx].replace('.npy', '.png'), 255*(rev_normal_imgmatch*0.5+0.5))
+                os.system(f"mkdir -p {os.path.dirname(sapiens_normals_path_to_regenerate_imgmatch[idx])}")
+                os.system(f"mv {sapiens_normals_path[idx]} {sapiens_normals_path2[idx]} &")
+            else:
+                valid_paths_sapiens_normals.append(False)
+        else:
+            valid_paths_sapiens_normals.append(True)
+            # move normal path 1 (vepfs local) to normal path 2 (tos)   
+            log.info(f"IMGMatch normal exists. moving {sapiens_normals_path[idx]} to {sapiens_normals_path2[idx]}")
+            os.system(f"mkdir -p {os.path.dirname(sapiens_normals_path2[idx])}")
+            os.system(f"mv {sapiens_normals_path[idx]} {sapiens_normals_path2[idx]} &")
+            os.system(f"mv {sapiens_normals_path[idx].replace('.npy', '.png')} {sapiens_normals_path2[idx].replace('.npy', '.png')} &")
+    valid_paths_sapiens_normals = np.array(valid_paths_sapiens_normals)
+
+    if not valid_paths_sapiens_normals.all():
+        num_missing = int((~valid_paths_sapiens_normals).sum())
+        log.warning(f"{dataset}: {num_missing} missing sapiens pixel normals. Regenerating those samples...")
+        # use normal path 1 only and if normal not exist in both folders, regenerate the normal, if failed, just skip computing normal loss.
+        sapiens_normals_path_to_regenerate = []  # Not necessary for now.
+        sapiens_normals_path_to_regenerate_imgmatch = np.array(sapiens_normals_path_to_regenerate_imgmatch)[~valid_paths_sapiens_normals].tolist()
+        imgname_to_regenerate = np.array(imgname_to_regenerate)[~valid_paths_sapiens_normals].tolist()
+        regen_sapiens_normals(
+            imgname_to_regenerate,
+            sapiens_normals_path_to_regenerate,
+            sapiens_normals_path_to_regenerate_imgmatch,
+            normal_preprocess=normal_preprocess,
+            normal_swapHW=normal_swapHW,
+            log=log,
+            cfg=cfg,
+            device=device,
+        )
+    else:
+        log.info(f"{dataset}: All sapiens pixel normals exist.")
+
+def regen_sapiens_normals(imgname_to_regenerate, sapiens_normals_path_to_regenerate=None, sapiens_normals_path_to_regenerate_imgmatch=None, normal_preprocess=None, normal_swapHW=None, log=None, cfg=None, device=None):
+    log.info(f'Regenerating sapiens normals ...')
+    cropping, resize, zoom_to_3Dpt = get_preprocess_args(normal_preprocess)
+    dataset = AdhocImageDataset(imgname_to_regenerate, (1024, 768), mean=[123.5, 116.5, 103.5], std=[58.5, 57.0, 57.5], cropping=cropping, resize=resize, zoom_to_3Dpt=zoom_to_3Dpt, out_names=sapiens_normals_path_to_regenerate, out_imgmatch_names=sapiens_normals_path_to_regenerate_imgmatch, swapHW=normal_swapHW)
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=1
+    )
+    SAPIENS_NORMAL_CKPT = cfg.paths.get('sapiens_normal_ckpt', os.environ.get('SAPIENS_NORMAL_CKPT', None))
+    USE_TORCHSCRIPT = "_torchscript" in SAPIENS_NORMAL_CKPT
+    exp_model = load_model(SAPIENS_NORMAL_CKPT, USE_TORCHSCRIPT)
+    if not USE_TORCHSCRIPT:
+        dtype = torch.bfloat16
+        exp_model.to(dtype)
+        exp_model = torch.compile(exp_model, mode="max-autotune", fullgraph=True)
+    else:
+        dtype = torch.float32  # TorchScript models use float32
+        exp_model = exp_model.to(device)
+    for batch_idx, (batch_image_name, batch_out_name, batch_out_imgmatch_name, batch_orig_imgs, batch_imgs) in tqdm(
+        enumerate(dataloader), total=len(dataloader)
+    ):
+        result = inference_model(exp_model, batch_imgs, dtype=torch.float32)
+        if batch_out_name:
+            os.makedirs(os.path.dirname(batch_out_name[0]), exist_ok=True)
+            np.save(batch_out_name[0], result[0])
+        normal_result = revert_npy(result[0], batch_orig_imgs[0], swapHW=normal_swapHW, mode=normal_preprocess)
+        os.makedirs(os.path.dirname(batch_out_imgmatch_name[0]), exist_ok=True)
+        np.save(batch_out_imgmatch_name[0], normal_result)
+        if batch_idx == 0:
+            cv2.imwrite(batch_out_imgmatch_name[0].replace('.npy', '.png'), 255*(normal_result*0.5+0.5))
+
+
 
 def resize_image(img, target_size):
     height, width = img.shape[:2]

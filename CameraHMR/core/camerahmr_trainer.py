@@ -10,6 +10,7 @@ from typing import Dict
 from yacs.config import CfgNode
 from loguru import logger
 import numpy as np
+import os
 
 from .backbones import create_backbone
 from .losses import (
@@ -562,16 +563,16 @@ class CameraHMR(pl.LightningModule):
             pred_vertices = output['pred_vertices']
 
             # SMPL vertices / point losses
-            loss_keypoints_3d = self.keypoint_3d_loss(pred_keypoints_3d, gt_keypoints_3d, pelvis_id=25+14, loss_mask=loss_mask) # 331
+            loss_keypoints_3d = self.keypoint_3d_loss(pred_keypoints_3d, gt_keypoints_3d, pelvis_id=25+14, loss_mask=loss_mask) # 3
             faces_t = torch.as_tensor(self.smpl_gt.faces, dtype=torch.long, device=pred_vertices.device)
-            loss_vertices = self.vertices_loss_l1l2(pred_vertices, batch['vertices'], loss_mask=loss_mask) # 56795
+            loss_vertices = self.vertices_loss_l1l2(pred_vertices, batch['vertices'], loss_mask=loss_mask) # 482
             # vis pred_vertices[0]
             # import open3d as o3d
             # pc = o3d.geometry.PointCloud()
             # pc.points = o3d.utility.Vector3dVector(pred_vertices[0].detach().cpu().numpy())
             # o3d.io.write_point_cloud(f'pred_vertices_{i}.ply', pc)
 
-            loss_vertices_pt2plane = self.vertices_loss_p2p(pred_vertices, batch['vertices'], faces_t, loss_mask=loss_mask) # 20062
+            loss_vertices_pt2plane = self.vertices_loss_p2p(pred_vertices, batch['vertices'], faces_t, loss_mask=loss_mask) # 165
 
             # Compute loss on SMPL parameters
             loss_smpl_params = {}
@@ -579,21 +580,26 @@ class CameraHMR(pl.LightningModule):
                 gt = gt_smpl_params[k].view(batch_size, -1)
                 if 'beta' not in k:
                     gt = aa_to_rotmat(gt.reshape(-1, 3)).view(batch_size, -1, 3, 3)
-                loss_smpl_params[k] = loss_mask * self.smpl_parameter_loss(pred.reshape(batch_size, -1), gt.reshape(batch_size, -1))
+                loss_smpl_params[k] = self.smpl_parameter_loss(pred.reshape(batch_size, -1), gt.reshape(batch_size, -1), loss_mask=loss_mask) # 0.02
 
             # SMPL vertex normal cosine loss
             w_normals = self.cfg.LOSS_WEIGHTS.get('SMPL_NORMALS', 0.0)
             if w_normals and ('vertices' in batch):
                 gt_vertices = batch['vertices']
                 # imgnames = batch.get('imgname', None)
-                loss_normals = loss_mask * self.smpl_normal_loss(pred_vertices, gt_vertices, faces_t) #, imgnames=imgnames
+                loss_normals = self.smpl_normal_loss(pred_vertices, gt_vertices, faces_t, loss_mask=loss_mask) #, imgnames=imgnames
+            else:
+                w_normals = 0.0
+                loss_normals = 0.0
 
+            # accumulate direct losses
             loss = self.cfg.LOSS_WEIGHTS['KEYPOINTS_3D'] * loss_keypoints_3d + \
                     sum([loss_smpl_params[k] * self.cfg.LOSS_WEIGHTS[k.upper()] for k in loss_smpl_params])+ \
                     self.cfg.LOSS_WEIGHTS['VERTICES'] * loss_vertices + \
                     self.cfg.LOSS_WEIGHTS.get('VERTICES_P2PL', 0.0) * loss_vertices_pt2plane + \
                     w_normals * loss_normals
 
+            # Projection Losses
             # crop / scaled / normed projected 2d vertices losses
             if self.cfg.LOSS_WEIGHTS['VERTS2D_CROP']:
                 gt_verts2d = batch['proj_verts']
@@ -604,7 +610,7 @@ class CameraHMR(pl.LightningModule):
                 gt_verts_2d_cropped[:,:,:2] = trans_points2d_parallel(gt_verts2d[:,:,:2], batch['_trans'])
                 gt_verts_2d_cropped[:,:,:2] = gt_verts_2d_cropped[:,:,:2]/ self.cfg.MODEL.IMAGE_SIZE - 0.5
 
-                loss_proj_vertices_cropped = self.keypoint_2d_loss(pred_verts2d_cropped, gt_verts_2d_cropped)
+                loss_proj_vertices_cropped = self.keypoint_2d_loss(pred_verts2d_cropped, gt_verts_2d_cropped, loss_mask=loss_mask)
                 loss += self.cfg.LOSS_WEIGHTS['VERTS2D_CROP'] * loss_proj_vertices_cropped
 
             if self.cfg.LOSS_WEIGHTS['VERTS2D']:
@@ -612,7 +618,7 @@ class CameraHMR(pl.LightningModule):
                 pred_verts2d = output['pred_verts2d'].clone()
                 pred_verts2d[:, :, :2] = 2 * (pred_verts2d[:, :, :2] / img_size) - 1
                 gt_verts2d[:, :, :2] = 2 * (gt_verts2d[:, :, :2] / img_size) - 1
-                loss_proj_vertices = self.keypoint_2d_loss(pred_verts2d, gt_verts2d)
+                loss_proj_vertices = self.keypoint_2d_loss(pred_verts2d, gt_verts2d, loss_mask=loss_mask)
                 loss += self.cfg.LOSS_WEIGHTS['VERTS2D'] * loss_proj_vertices
 
             if self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM']:
@@ -622,7 +628,7 @@ class CameraHMR(pl.LightningModule):
 
                 pred_verts2d[:, :, :2] =  (pred_verts2d[:, :, :2] - pred_verts2d[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
                 gt_verts2d[:, :, :2] =  (gt_verts2d[:, :, :2] - gt_verts2d[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
-                loss_proj_vertices_norm = self.keypoint_2d_loss(pred_verts2d, gt_verts2d)
+                loss_proj_vertices_norm = self.keypoint_2d_loss(pred_verts2d, gt_verts2d, loss_mask=loss_mask)
                 loss += self.cfg.LOSS_WEIGHTS['VERTS_2D_NORM'] * loss_proj_vertices_norm
 
             # crop / scaled / normed projected 2D keypoint losses
@@ -632,7 +638,7 @@ class CameraHMR(pl.LightningModule):
                 pred_keypoints_2d_cropped = trans_points2d_parallel(pred_keypoints_2d, batch['_trans'])
                 pred_keypoints_2d_cropped = pred_keypoints_2d_cropped/ self.cfg.MODEL.IMAGE_SIZE - 0.5
 
-                loss_keypoints_2d_cropped = self.keypoint_2d_loss(pred_keypoints_2d_cropped, gt_keypoints_2d)
+                loss_keypoints_2d_cropped = self.keypoint_2d_loss(pred_keypoints_2d_cropped, gt_keypoints_2d, loss_mask=loss_mask)
                 loss += self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_CROP'] * loss_keypoints_2d_cropped
 
             if self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D']:
@@ -640,7 +646,7 @@ class CameraHMR(pl.LightningModule):
                 pred_keypoints_2d_clone[:, :, :2] = 2 * (pred_keypoints_2d_clone[:, :, :2] / img_size) - 1
                 gt_keypoints_2d = batch['orig_keypoints_2d']
                 gt_keypoints_2d[:, :, :2] = 2 * (gt_keypoints_2d[:, :, :2] / img_size) - 1
-                loss_keypoints_2d = self.keypoint_2d_loss_scaled(pred_keypoints_2d_clone, gt_keypoints_2d, batch['box_size'], img_size)
+                loss_keypoints_2d = self.keypoint_2d_loss_scaled(pred_keypoints_2d_clone, gt_keypoints_2d, batch['box_size'], img_size, loss_mask=loss_mask)
                 loss += self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D'] * loss_keypoints_2d
 
             if self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_NORM']:
@@ -649,7 +655,7 @@ class CameraHMR(pl.LightningModule):
                 pred_keypoints_2d_clone[:, :, :2] =  (pred_keypoints_2d_clone[:, :, :2] - pred_keypoints_2d_clone[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
                 gt_keypoints_2d = batch['orig_keypoints_2d'].clone()
                 gt_keypoints_2d[:, :, :2] =  (gt_keypoints_2d[:, :, :2] - gt_keypoints_2d[:, [0], :2])/batch['box_size'].unsqueeze(-1).unsqueeze(-1)
-                loss_keypoints_2d_norm = self.keypoint_2d_loss(pred_keypoints_2d_clone, gt_keypoints_2d)
+                loss_keypoints_2d_norm = self.keypoint_2d_loss(pred_keypoints_2d_clone, gt_keypoints_2d, loss_mask=loss_mask)
                 loss += self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_NORM'] * loss_keypoints_2d_norm
 
             # camera translation loss
@@ -657,7 +663,7 @@ class CameraHMR(pl.LightningModule):
 
                 gt_trans = batch['translation'][:,:3]
                 pred_trans = output['pred_cam_t']
-                loss_trans = self.trans_loss(pred_trans, gt_trans)
+                loss_trans = self.trans_loss(pred_trans, gt_trans, loss_mask=loss_mask)
                 loss += self.cfg.LOSS_WEIGHTS['TRANS_LOSS'] * loss_trans
 
             total_loss += loss
@@ -666,13 +672,13 @@ class CameraHMR(pl.LightningModule):
                         loss_keypoints_3d=loss_keypoints_3d.detach(),
                         loss_vertices=loss_vertices.detach(),
                         loss_vertices_pt2plane=loss_vertices_pt2plane.detach(),
-                        loss_smpl_normals=loss_normals.detach(),
-                        loss_kp2d_cropped=loss_keypoints_2d_cropped.detach())
+                        loss_smpl_normals=loss_normals.detach() if w_normals else None,
+                        loss_kp2d_cropped=loss_keypoints_2d_cropped.detach() if self.cfg.LOSS_WEIGHTS['KEYPOINTS_2D_CROP'] else None)
 
             for k, v in loss_smpl_params.items():
                 losses['loss_' + k] = v.detach()
 
-            output['losses_{gendered_name}'] = losses
+            output[f'losses_{gendered_name}'] = losses
 
         return total_loss
 
@@ -709,12 +715,12 @@ class CameraHMR(pl.LightningModule):
 
         # build a single dict with all gendered losses, then log
         metric_dict = {
-            f"train/loss_{name}": output[f"losses_{name}"]["loss"]
+            f"train/loss_{name}": gendered_output[self.gendered_list.index(name)][f"losses_{name}"]["loss"]
             for name in self.gendered_list  # e.g., ["neutral", "male", "female"]
-        }
+        } # f"losses_{name}"
         self.log_dict(metric_dict, on_step=True, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
-        return gendered_output
+        return gendered_output[0]
 
 
 
@@ -723,6 +729,53 @@ class CameraHMR(pl.LightningModule):
         batch_size = batch['img'].shape[0]
         gendered_output,_ = self.forward_step(batch, train=False)
         dataset_names = batch['dataset']
+
+        # Render-only path: if no GT annotations present (no 'vertices' and no 'smpl_params'),
+        # just render and save results similar to demo.py
+        if ('vertices' not in batch) and ('smpl_params' not in batch):
+            img_h = batch['img_size'][:,0]
+            img_w = batch['img_size'][:,1]
+            device = gendered_output[0]['pred_cam'].device
+            cam_t = convert_to_full_img_cam(
+                pare_cam=gendered_output[0]['pred_cam'],
+                bbox_height=batch['box_size'],
+                bbox_center=batch['box_center'],
+                img_w=img_w,
+                img_h=img_h,
+                focal_length=batch['cam_int'][:, 0, 0],
+            )
+
+            # Output directory
+            try:
+                out_root = os.path.join(self.cfg.paths.output_dir, 'val_renders')
+            except Exception:
+                out_root = os.path.join('.', 'val_renders')
+            ds_name0 = dataset_names[0] if isinstance(dataset_names, list) else str(dataset_names)
+            render_dir = os.path.join(out_root, ds_name0)
+            os.makedirs(render_dir, exist_ok=True)
+
+            # Save renders per image
+            for i in range(batch_size):
+                imgname = batch['imgname'][i]
+                fname = os.path.basename(imgname)
+                save_path = os.path.join(render_dir, f"{self.global_step:08d}_{batch_idx:04d}_{i:02d}_{fname}")
+                try:
+                    rendered_img = render_image_group(
+                        image=cv2.imread(imgname),
+                        camera_translation=cam_t[i],
+                        vertices=gendered_output[0]['pred_vertices'][i],
+                        focal_length=(float(batch['cam_int'][i,0,0]), float(batch['cam_int'][i,1,1])),
+                        camera_center=(float(img_w[i]) / 2.0, float(img_h[i]) / 2.0),
+                        camera_rotation=None,
+                        save_filename=save_path,
+                        faces=self.smpl_gt.faces,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to render {imgname}: {e}")
+
+            # Keep checkpoint callback happy without computing real val metrics
+            self.log('val_loss', torch.tensor(0.0, device=self.device), logger=True, sync_dist=True)
+            return {}
 
         joint_mapper_h36m = H36M_TO_J14
         J_regressor_batch_smpl = self.J_regressor[None, :].expand(batch['img'].shape[0], -1, -1).float().cuda()

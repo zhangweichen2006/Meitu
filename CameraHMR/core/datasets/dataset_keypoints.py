@@ -39,7 +39,7 @@ class DatasetKeypoints(Dataset):
         }[cfg.DATASETS.get('BORDER_MODE', 'constant')]
 
         self.img_dir = DATASET_FOLDERS[dataset]
-        self.data = np.load(DATASET_FILES[version][dataset], allow_pickle=True)
+        self.data = np.load(DATASET_FILES[dataset], allow_pickle=True)
         self.imgname = self.data['imgname']
         # Bounding boxes are assumed to be in the center and scale format
         self.scale = self.data['scale']

@@ -7,6 +7,7 @@ import os
 from ..configs import DATASET_FOLDERS, DATASET_FILES
 from .dataset_train import DatasetTrain
 from .dataset_val import DatasetVal
+from .dataset_test import DatasetTest
 from .dataset_traintest import DatasetTrainTest
 from .dataset_wai import DatasetWAI
 
@@ -32,12 +33,9 @@ class DataModule(pl.LightningDataModule):
             # kwargs['std'] = self.cfg.MODEL.IMAGE_STD
             # kwargs['cropsize'] = self.cfg.MODEL.IMAGE_SIZE
             self.train_dataset = self.train_dataset_prepare()
-            # self.train_dataset = self.train_test_dataset_prepare(**kwargs)
-            # kwargs['is_train'] = False
-            # kwargs['version'] = 'traintest'
-            # self.val_dataset = self.train_test_dataset_prepare(**kwargs)
-            # self.train_dataset = self.train_dataset_prepare()
-            self.val_dataset = self.val_dataset_prepare()
+            # Use test dataset(s) for validation stage (render-only flows)
+            self.val_dataset = self.test_dataset_prepare()
+            self.test_dataset = self.test_dataset_prepare()
 
     def train_dataset_prepare(self):
         if self.cfg.DATASETS.TRAIN_DATASETS:
@@ -49,8 +47,7 @@ class DataModule(pl.LightningDataModule):
                     valid_datasets.append(ds)
                 else:
                     img_dir = DATASET_FOLDERS.get(ds)
-                    lbl_map = DATASET_FILES['train'] if isinstance(DATASET_FILES, list) or isinstance(DATASET_FILES, dict) else DATASET_FILES
-                    lbl_file = lbl_map.get(ds) if isinstance(lbl_map, dict) else None
+                    lbl_file = DATASET_FILES.get(ds) if isinstance(DATASET_FILES, dict) else None
                     if img_dir and os.path.isdir(img_dir) and lbl_file and os.path.isfile(lbl_file):
                         valid_datasets.append(ds)
                     else:
@@ -65,23 +62,43 @@ class DataModule(pl.LightningDataModule):
             return None
 
     def val_dataset_prepare(self):
-        dataset_names = self.cfg.DATASETS.VAL_DATASETS.split('_')
+        # Prefer explicit VAL_DATASETS; if empty, fall back to TEST_DATASETS for render-only validation
+        val_spec = (self.cfg.DATASETS.VAL_DATASETS or '').strip()
+        use_test_as_val = (len(val_spec) == 0)
+        dataset_names = []
+        if not use_test_as_val:
+            dataset_names = [ds for ds in val_spec.split('_') if ds]
+        else:
+            test_spec = (getattr(self.cfg.DATASETS, 'TEST_DATASETS', '') or '').strip()
+            dataset_names = [ds for ds in test_spec.split('_') if ds]
+
         valid_datasets = []
         for ds in dataset_names:
             if ds.startswith('wai:'):
                 valid_datasets.append(ds)
             else:
                 img_dir = DATASET_FOLDERS.get(ds)
-                lbl_map = DATASET_FILES['test'] if isinstance(DATASET_FILES, list) or isinstance(DATASET_FILES, dict) else DATASET_FILES
-                lbl_file = lbl_map.get(ds) if isinstance(lbl_map, dict) else None
-                if img_dir and os.path.isdir(img_dir) and lbl_file and os.path.isfile(lbl_file):
+                if img_dir and os.path.isdir(img_dir):
                     valid_datasets.append(ds)
                 else:
-                    print(f"Val Dataset {ds} does not exist")
-        dataset_list = [
-            (DatasetWAI(self.cfg, ds, version='test', is_train=False) if ds.startswith('wai:') else DatasetVal(self.cfg, ds, version='test'))
-            for ds in valid_datasets
-        ]
+                    print(f"Val/Test Dataset {ds} does not exist: {img_dir}")
+
+        # Build dataset objects
+        dataset_list = []
+        for ds in valid_datasets:
+            if ds.startswith('wai:'):
+                dataset_list.append(DatasetWAI(self.cfg, ds, version='test', is_train=False))
+            else:
+                if use_test_as_val:
+                    # Use DatasetTest (image-only, optional normals) when VAL is empty and TEST is provided
+                    dataset_list.append(DatasetTest(self.cfg, ds, version='test', is_train=False))
+                else:
+                    dataset_list.append(DatasetVal(self.cfg, ds, version='test'))
+        return dataset_list
+
+    def test_dataset_prepare(self):
+        dataset_names = self.cfg.DATASETS.TEST_DATASETS.split('_')
+        dataset_list = [DatasetTest(self.cfg, ds, version='test', is_train=False) for ds in dataset_names]
         return dataset_list
 
     def train_test_dataset_prepare(self, **kwargs):
@@ -116,6 +133,12 @@ class DataModule(pl.LightningDataModule):
         for val_ds in self.val_dataset:
             val_dataloaders.append(torch.utils.data.DataLoader(val_ds, self.cfg.TRAIN.BATCH_SIZE, drop_last=True, num_workers=self.cfg.GENERAL.NUM_WORKERS))
         return val_dataloaders
+
+    def test_dataloader(self):
+        test_dataloaders = []
+        for test_ds in self.test_dataset:
+            test_dataloaders.append(torch.utils.data.DataLoader(test_ds, 1, drop_last=False, num_workers=1))
+        return test_dataloaders
 
     def train_test_dataloader(self):
         train_test_dataloaders = []
